@@ -32,12 +32,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: gtest-${{ runner.os }}-${{ hashFiles('src/tests/CMakeLists.txt') }}
+          key: gtest-${{ runner.os }}-${{ hashFiles('tests/CMakeLists.txt') }}
           restore-keys: |
             gtest-${{ runner.os }}-
 
       - name: Configurar (CMake)
-        run: cmake -S src -B build -G Ninja -DTOOUR_BUILD_TESTS=ON
+        run: cmake -S . -B build -G Ninja -DGLP_BUILD_TESTS=ON
 
       - name: Compilar
         run: cmake --build build --parallel
@@ -63,7 +63,7 @@ jobs:
           path: |
             ~/.platformio
             ~/.cache/pip
-          key: pio-${{ runner.os }}-${{ hashFiles('src/platformio.ini') }}
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
           restore-keys: |
             pio-${{ runner.os }}-
 
@@ -73,4 +73,4 @@ jobs:
           pip install platformio
 
       - name: Compilar firmware
-        run: pio run -d src -e esp32dev
+        run: pio run -e esp32-s3-n16r8

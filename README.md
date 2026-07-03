@@ -415,16 +415,20 @@ GLP_Presure/
 
 ---
 
-## License & Contact
+## License
 
-LPG IoT Measurement System — ESP32-S3 firmware.
+Licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
-Author: **Jorge Gaspar Beltre Rivera**
+---
+
+## Contact
+
+Author: **Jorge Gaspar Beltre Rivera**  
 Project: **LPG IoT Measurement System — ESP32-S3 firmware**
 
-[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/JorgeGBeltre)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/jorge-gaspar-beltre-rivera/)
-[![Email](https://img.shields.io/badge/Email-EA4335?style=for-the-badge&logo=gmail&logoColor=white)](mailto:Jorgegaspar3021@gmail.com)
+ [![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/JorgeGBeltre)
+ [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/jorge-gaspar-beltre-rivera/)
+ [![Email](https://img.shields.io/badge/Email-EA4335?style=for-the-badge&logo=gmail&logoColor=white)](mailto:Jorgegaspar3021@gmail.com)
 
 ---
 
