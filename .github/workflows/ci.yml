@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - feature
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+ 
+  host-tests:
+    name: Host tests (CMake + ctest)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Instalar toolchain de compilación
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build
+
+      - name: Cache de GoogleTest (FetchContent)
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: gtest-${{ runner.os }}-${{ hashFiles('src/tests/CMakeLists.txt') }}
+          restore-keys: |
+            gtest-${{ runner.os }}-
+
+      - name: Configurar (CMake)
+        run: cmake -S src -B build -G Ninja -DTOOUR_BUILD_TESTS=ON
+
+      - name: Compilar
+        run: cmake --build build --parallel
+
+      - name: Correr tests
+        run: ctest --test-dir build --output-on-failure
+
+  firmware-build:
+    name: Firmware build (PlatformIO)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache de PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('src/platformio.ini') }}
+          restore-keys: |
+            pio-${{ runner.os }}-
+
+      - name: Instalar PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio
+
+      - name: Compilar firmware
+        run: pio run -d src -e esp32dev

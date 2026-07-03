@@ -1,0 +1,45 @@
+#pragma once
+
+#include <string>
+#include <cstdint>
+
+namespace glp::domain {
+
+/**
+ * Configuración del dispositivo — entidad de dominio PURA.
+ *
+ * Reemplaza al antiguo `struct AppConfig` (que usaba Arduino `String` y estaba
+ * acoplado a `Preferences`). Aquí no hay ninguna dependencia de hardware: se usa
+ * `std::string`, de modo que esta entidad compila y se testea en host.
+ *
+ * La persistencia vive en Infrastructure (ver IConfigRepository).
+ */
+struct DeviceConfig {
+    // Conectividad celular
+    std::string apn;
+    std::string apnUser;
+    std::string apnPass;
+
+    // Broker MQTT
+    std::string mqttBroker;
+    int         mqttPort = 1883;
+    std::string mqttUser;
+    std::string mqttPass;
+
+    // Conectividad WiFi (uplink alternativo al celular)
+    std::string wifiSsid;
+    std::string wifiPass;
+
+    // Identidad y geometría del tanque
+    std::string deviceId;
+    float       tankRadiusCm = 0.0f;
+    float       tankLengthCm = 0.0f;
+
+    // OTA
+    std::string otaHmacKey;
+
+    // Estado
+    bool provisioned = false;
+};
+
+} // namespace glp::domain
