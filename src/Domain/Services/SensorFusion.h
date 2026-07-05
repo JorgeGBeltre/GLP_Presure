@@ -9,6 +9,8 @@
 #include "Domain/Services/KalmanFilter.h"
 #include "Domain/Services/LpgThermo.h"
 #include "Domain/Services/StateEkf.h"
+#include "Domain/Services/TiltCorrection.h"
+#include "Domain/Entities/TiltReading.h"
 
 namespace glp::domain {
 
@@ -35,7 +37,8 @@ public:
      * @param tank Dimensiones internas del tanque (mm)
      */
     VolumeEstimate process(const SensorSample& s, const TankDimensions& tank,
-                           float propaneFraction = 1.0f) {
+                           float propaneFraction = 1.0f,
+                           TiltReading tilt = {}, float sensorAxialMm = 0.0f) {
         VolumeEstimate r;
 
         // 1. Presión filtrada (para reporte y para la inversa de Antoine).
@@ -57,14 +60,14 @@ public:
         // 4. Densidad del GLP por tabla interpolada (mezcla propano/butano)
         r.densityKgL = LpgThermo::densityKgL(r.tempCelsius, propaneFraction);
 
-        // 5. Volumen del tanque cilíndrico horizontal (segmento circular)
+        // 5. Corrección por inclinación (de-sesgo axial) + volumen integrando el plano
+        //    inclinado a lo largo del eje. Sin inclinación válida ⇒ pitch=0 y la
+        //    integral coincide con el segmento recto A(h)·L.
+        const float pitch = tilt.valid ? tilt.pitchRad : 0.0f;
+        r.levelMm = TiltCorrection::levelAtCenter(r.levelMm, pitch, sensorAxialMm);
         const float R = tank.radiusMm;
         if (R > 0.0f && tank.lengthMm > 0.0f) {
-            const float h = std::clamp(r.levelMm, 0.0f, 2.0f * R);
-            const float theta = 2.0f * std::acos((R - h) / R);
-            const float areaSegment = R * R * (theta - std::sin(theta)) / 2.0f;
-            r.volumeLiters = (areaSegment * tank.lengthMm) / 1'000'000.0f; // mm³ → L
-
+            r.volumeLiters = TiltCorrection::tiltedVolumeLiters(r.levelMm, pitch, R, tank.lengthMm);
             const float volumeTotal =
                 (kPi * R * R * tank.lengthMm) / 1'000'000.0f;
             r.percentage = (volumeTotal > 0.0f)
