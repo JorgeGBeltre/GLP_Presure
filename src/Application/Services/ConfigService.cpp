@@ -17,6 +17,14 @@ bool ConfigService::applyRemoteUpdate(const RemoteConfigUpdate& update) {
     if (update.mqttPort)     { config_.mqttPort     = *update.mqttPort;     changed = true; }
     if (update.otaHmacKey)   { config_.otaHmacKey   = *update.otaHmacKey;   changed = true; }
 
+    if (update.tankHeightCm)  { config_.tankHeightCm  = *update.tankHeightCm;  changed = true; }
+    if (update.mountOffsetCm) { config_.mountOffsetCm = *update.mountOffsetCm; changed = true; }
+    if (update.pressSlope)    { config_.calibration.pressSlope  = *update.pressSlope;  changed = true; }
+    if (update.pressOffset)   { config_.calibration.pressOffset = *update.pressOffset; changed = true; }
+    if (update.tempRRef)      { config_.calibration.tempRRef    = *update.tempRRef;    changed = true; }
+    if (update.tempVExc)      { config_.calibration.tempVExc    = *update.tempVExc;    changed = true; }
+    if (update.tempOffsetC)   { config_.calibration.tempOffsetC = *update.tempOffsetC; changed = true; }
+
     if (!changed) return false;
     return repo_.save(config_);
 }

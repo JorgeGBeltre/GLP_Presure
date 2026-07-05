@@ -29,6 +29,8 @@ public:
                                               config_.tankLengthCm);
     }
 
+    const domain::SensorCalibration& sensorCalibration() const { return config_.calibration; }
+
     /**
      * Aplica los campos presentes en `update`, persiste y devuelve true si algo
      * cambió y se guardó correctamente.

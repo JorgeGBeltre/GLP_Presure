@@ -30,6 +30,9 @@ public:
         return x_;
     }
 
+    /** Paso de sólo predicción (sin medición): crece la incertidumbre, se mantiene x. */
+    void predict() { p_ = p_ + q_; }
+
     float estimate()    const { return x_; }
     float uncertainty() const { return p_; }
 

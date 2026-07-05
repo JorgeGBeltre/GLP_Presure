@@ -44,6 +44,10 @@ provisioning** (BLE, WiFi captive portal, and SmartConfig). Built on a four-laye
 ### Measurement
 - **Sensor fusion** — ultrasonic (level) + pressure + temperature.
 - **Scalar Kalman filter** per sensor: removes noise without adding latency.
+- **Sensor calibration** — Pt1000 (IEC 60751) temperature and 2-point linear pressure,
+  configured at provisioning; ultrasonic level as `h = H − d` with dead-zone offset.
+- **Invalid-reading safety** — a timed-out/out-of-range channel makes the Kalman filter
+  predict-only (holds the estimate, grows uncertainty) instead of ingesting garbage.
 - **Dynamic volume** — circular-segment formula for a horizontal cylindrical tank,
   with configurable dimensions.
 - **Density compensation** of LPG by temperature → gallons.

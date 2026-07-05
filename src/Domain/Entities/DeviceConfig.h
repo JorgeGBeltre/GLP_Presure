@@ -3,6 +3,8 @@
 #include <string>
 #include <cstdint>
 
+#include "Domain/Entities/SensorCalibration.h"
+
 namespace glp::domain {
 
 /**
@@ -34,6 +36,11 @@ struct DeviceConfig {
     std::string deviceId;
     float       tankRadiusCm = 0.0f;
     float       tankLengthCm = 0.0f;
+
+    // Geometría adicional para el nivel (h = H − d) y calibración de sensores
+    float             tankHeightCm  = 0.0f;   // H: plano del sensor → piso interior
+    float             mountOffsetCm = 0.0f;   // zona muerta/standoff no incluida en H
+    SensorCalibration calibration{};
 
     // OTA
     std::string otaHmacKey;

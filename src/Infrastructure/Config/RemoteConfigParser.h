@@ -17,7 +17,7 @@ namespace glp::infra {
 class RemoteConfigParser {
 public:
     static std::optional<app::RemoteConfigUpdate> parse(const std::string& json) {
-        StaticJsonDocument<512> doc;
+        StaticJsonDocument<768> doc;
         if (deserializeJson(doc, json)) return std::nullopt;
 
         app::RemoteConfigUpdate u;
@@ -32,6 +32,13 @@ public:
             const char* s = doc["ota_hmac_key"];
             if (s) u.otaHmacKey = s;
         }
+        if (doc.containsKey("tank_height_cm"))  u.tankHeightCm  = doc["tank_height_cm"].as<float>();
+        if (doc.containsKey("mount_offset_cm")) u.mountOffsetCm = doc["mount_offset_cm"].as<float>();
+        if (doc.containsKey("press_slope"))     u.pressSlope    = doc["press_slope"].as<float>();
+        if (doc.containsKey("press_offset"))    u.pressOffset   = doc["press_offset"].as<float>();
+        if (doc.containsKey("temp_r_ref"))      u.tempRRef      = doc["temp_r_ref"].as<float>();
+        if (doc.containsKey("temp_v_exc"))      u.tempVExc      = doc["temp_v_exc"].as<float>();
+        if (doc.containsKey("temp_offset_c"))   u.tempOffsetC   = doc["temp_offset_c"].as<float>();
         return u;
     }
 };
