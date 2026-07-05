@@ -37,6 +37,7 @@ void loadConfig() {
     config.temp_offset_c = preferences.getFloat("t_offc", 0.0f);
     config.propane_fraction = preferences.getFloat("propane_fr", 1.0f);
     config.sensor_axial_cm = preferences.getFloat("sensor_ax", 0.0f);
+    config.ref_distance_cm = preferences.getFloat("ref_dist", 0.0f);
     config.ota_hmac_key = preferences.getString("ota_hmac", "");
     preferences.end();
 }
@@ -64,6 +65,7 @@ void saveConfig() {
     preferences.putFloat("t_offc", config.temp_offset_c);
     preferences.putFloat("propane_fr", config.propane_fraction);
     preferences.putFloat("sensor_ax", config.sensor_axial_cm);
+    preferences.putFloat("ref_dist", config.ref_distance_cm);
     preferences.putString("ota_hmac", config.ota_hmac_key);
     preferences.putBool("provisioned", true);
     preferences.end();

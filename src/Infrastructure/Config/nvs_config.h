@@ -25,6 +25,7 @@ struct AppConfig {
     float temp_offset_c;
     float propane_fraction;
     float sensor_axial_cm;
+    float ref_distance_cm;
     String ota_hmac_key;
 };
 

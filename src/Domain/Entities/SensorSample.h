@@ -13,6 +13,9 @@ struct SensorSample {
     bool  levelValid     = true;  // false si la lectura del canal es inválida (timeout/riel)
     bool  pressureValid  = true;
     bool  tempValid      = true;
+    float soundSpeedMs    = 343.0f; // c estimada usada para la distancia
+    bool  reflectorUsed   = false;  // el reflector de referencia fue la fuente de c
+    bool  acousticHealthy = true;   // reflector y modelo de gas coinciden
 };
 
 } // namespace glp::domain

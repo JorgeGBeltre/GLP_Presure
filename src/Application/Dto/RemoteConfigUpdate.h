@@ -27,6 +27,7 @@ struct RemoteConfigUpdate {
     std::optional<float> tempOffsetC;
     std::optional<float> propaneFraction;
     std::optional<float> sensorAxialCm;
+    std::optional<float> refDistanceCm;
 };
 
 } // namespace glp::app
