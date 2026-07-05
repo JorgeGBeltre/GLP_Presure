@@ -2,6 +2,6 @@
 #include <Arduino.h>
 
 void initSensors();
-bool readUltrasonicRaw(float& outMm);
+bool readUltrasonicTimeUs(float& outUs);
 float readPressureRawBar();
 float readTemperatureRawC();

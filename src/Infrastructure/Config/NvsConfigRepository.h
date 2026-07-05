@@ -53,6 +53,9 @@ private:
         d.calibration.tempRRef    = c.temp_r_ref;
         d.calibration.tempVExc    = c.temp_v_exc;
         d.calibration.tempOffsetC = c.temp_offset_c;
+        d.propaneFraction = c.propane_fraction;
+        d.sensorAxialCm = c.sensor_axial_cm;
+        d.refDistanceCm = c.ref_distance_cm;
         d.otaHmacKey  = c.ota_hmac_key.c_str();
         return d;
     }
@@ -78,6 +81,9 @@ private:
         c.temp_r_ref   = d.calibration.tempRRef;
         c.temp_v_exc   = d.calibration.tempVExc;
         c.temp_offset_c = d.calibration.tempOffsetC;
+        c.propane_fraction = d.propaneFraction;
+        c.sensor_axial_cm = d.sensorAxialCm;
+        c.ref_distance_cm = d.refDistanceCm;
         c.ota_hmac_key = d.otaHmacKey.c_str();
         return c;
     }

@@ -18,7 +18,10 @@ public:
 
     domain::RawSensorSample read() override {
         domain::RawSensorSample r;
-        r.echoValid = readUltrasonicRaw(r.echoDistanceMm);
+        float tFlightUs = 0.0f;
+        r.ultrasonic.echoValid = readUltrasonicTimeUs(tFlightUs);
+        r.ultrasonic.tFlightUs = tFlightUs;
+        r.ultrasonic.refValid  = false;   // sin reflector de referencia por ahora (futuro)
 
         r.pressureVolts = ads_.computeVolts(ads_.readADC_SingleEnded(kPressureCh));
         r.pressureValid = (r.pressureVolts > 0.02f); // >20mV = no está en el riel bajo

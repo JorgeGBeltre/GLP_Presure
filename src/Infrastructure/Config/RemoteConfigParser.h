@@ -39,6 +39,9 @@ public:
         if (doc.containsKey("temp_r_ref"))      u.tempRRef      = doc["temp_r_ref"].as<float>();
         if (doc.containsKey("temp_v_exc"))      u.tempVExc      = doc["temp_v_exc"].as<float>();
         if (doc.containsKey("temp_offset_c"))   u.tempOffsetC   = doc["temp_offset_c"].as<float>();
+        if (doc.containsKey("propane_fraction")) u.propaneFraction = doc["propane_fraction"].as<float>();
+        if (doc.containsKey("sensor_axial_cm")) u.sensorAxialCm  = doc["sensor_axial_cm"].as<float>();
+        if (doc.containsKey("ref_distance_cm")) u.refDistanceCm  = doc["ref_distance_cm"].as<float>();
         return u;
     }
 };

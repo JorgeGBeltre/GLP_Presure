@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 #include "Domain/Services/SensorFusion.h"
 
 using namespace glp::domain;
@@ -72,4 +74,39 @@ TEST(SensorFusion, InvalidLevelHoldsEstimateAndGrowsUncertainty) {
 
     EXPECT_NEAR(held.levelMm, 500.0f, 5.0f);              // se sostiene, no cae a 0
     EXPECT_GT(held.kalmanUncertaintyMm, sigmaConverged);  // la incertidumbre crece
+}
+
+TEST(SensorFusion, ComputesMassAndVcf) {
+    SensorFusion f;
+    f.reset();
+    const TankDimensions tank{500.0f, 1000.0f};
+    const VolumeEstimate r = feedManyTimes(f, {500.0f, 6.0f, 15.0f}, tank, 300);
+
+    EXPECT_GT(r.massKg, 0.0f);
+    EXPECT_NEAR(r.massKg, r.densityKgL * r.volumeLiters, 1e-2f); // masa = ρ·V, sin double-count
+    EXPECT_GT(r.volume15Liters, 0.0f);
+}
+
+TEST(SensorFusion, TiltAxialDebiasRecoversVolume) {
+    // Sensor a +1000mm con pitch 8°: la estación lee alto, pero el de-sesgo axial
+    // recupera el centro y, a medio tanque, el volumen es ~invariante a la inclinación.
+    const TankDimensions tank{500.0f, 1000.0f};
+    const float pitch = 8.0f * 3.14159265f / 180.0f;
+
+    SensorFusion flat;
+    flat.reset();
+    VolumeEstimate rf;
+    for (int i = 0; i < 300; ++i) rf = flat.process({500.0f, 6.0f, 15.0f}, tank, 1.0f);
+
+    SensorFusion tilted;
+    tilted.reset();
+    TiltReading tilt;
+    tilt.valid = true;
+    tilt.pitchRad = pitch;
+    const float station = 500.0f + 1000.0f * std::tan(pitch);
+    VolumeEstimate rt;
+    for (int i = 0; i < 300; ++i) rt = tilted.process({station, 6.0f, 15.0f}, tank, 1.0f, tilt, 1000.0f);
+
+    EXPECT_NEAR(rt.levelMm, 500.0f, 3.0f);              // de-sesgado al centro
+    EXPECT_NEAR(rt.percentage, rf.percentage, 2.0f);   // ~50% ambos
 }

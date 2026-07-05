@@ -30,6 +30,8 @@ public:
     }
 
     const domain::SensorCalibration& sensorCalibration() const { return config_.calibration; }
+    float propaneFraction() const { return config_.propaneFraction; }
+    float sensorAxialCm()   const { return config_.sensorAxialCm; }
 
     /**
      * Aplica los campos presentes en `update`, persiste y devuelve true si algo
