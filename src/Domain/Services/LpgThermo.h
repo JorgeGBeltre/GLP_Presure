@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 
 namespace glp::domain {
 
@@ -41,7 +42,25 @@ public:
         return (rho15 > 0.0f) ? massKg / rho15 : 0.0f;
     }
 
+    /**
+     * Presión de vapor saturado (bar) por Antoine (constantes NIST, bar/Kelvin):
+     * log10(P_bar) = A − B/(C + T_K), con T convertida a Kelvin internamente.
+     * Mezcla ponderada por fracción de propano. Es un chequeo de consistencia
+     * P↔T para la salud del sensor, NO alimenta la masa.
+     */
+    static float vaporPressureBar(float tempC, float propaneFraction) {
+        const float tK = tempC + 273.15f;
+        const float pP = antoine(tK, 3.98292f, 819.296f, -24.417f);  // propano
+        const float pB = antoine(tK, 4.35576f, 1175.581f, -2.071f);  // butano
+        const float frac = std::clamp(propaneFraction, 0.0f, 1.0f);
+        return frac * pP + (1.0f - frac) * pB;
+    }
+
 private:
+    static float antoine(float tK, float A, float B, float C) {
+        return std::pow(10.0f, A - B / (C + tK));
+    }
+
     /** Interpolación lineal; fuera del rango de la tabla, clamp al extremo. */
     static float interp(float t, const float table[kN]) {
         if (t <= kTemp[0])      return table[0];

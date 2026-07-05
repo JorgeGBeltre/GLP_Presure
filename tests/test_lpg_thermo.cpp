@@ -34,3 +34,21 @@ TEST(LpgThermo, VcfIsMassOverDensityAt15AndConservesMass) {
     const float v15 = LpgThermo::volume15C(mass, frac);
     EXPECT_NEAR(v15 * LpgThermo::densityKgL(15.0f, frac), mass, 1e-3f);
 }
+
+TEST(LpgThermo, VaporPressurePropaneAt25CIsAbout9_8Bar) {
+    EXPECT_NEAR(LpgThermo::vaporPressureBar(25.0f, 1.0f), 9.77f, 0.2f);
+}
+
+TEST(LpgThermo, VaporPressureRisesWithTemperature) {
+    EXPECT_GT(LpgThermo::vaporPressureBar(40.0f, 1.0f), LpgThermo::vaporPressureBar(0.0f, 1.0f));
+}
+
+TEST(LpgThermo, ButaneVaporPressureLowerThanPropane) {
+    EXPECT_LT(LpgThermo::vaporPressureBar(25.0f, 0.0f), LpgThermo::vaporPressureBar(25.0f, 1.0f));
+}
+
+TEST(LpgThermo, VaporPressureNoPoleNear24C) {
+    // El set en Celsius tendría un polo ~24.4 °C; con NIST en Kelvin no debe diverger.
+    EXPECT_LT(LpgThermo::vaporPressureBar(24.0f, 1.0f), 20.0f);
+    EXPECT_GT(LpgThermo::vaporPressureBar(24.0f, 1.0f), 0.0f);
+}
