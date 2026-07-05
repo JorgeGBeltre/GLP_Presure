@@ -60,7 +60,7 @@ Firmware for **remote measurement of Liquefied Petroleum Gas (LPG)** in horizont
 **Board:** ESP32-S3-WROOM-1-**N16R8** — 16 MB flash, 8 MB octal PSRAM, 3.3 V logic.
 
 Physical pins are mapped in a centralized location:
-[BoardConfig.h](file:///c:/Users/Jorge/Desktop/GLP_Presure/src/Infrastructure/Config/BoardConfig.h).
+[BoardConfig.h](src/Infrastructure/Config/BoardConfig.h).
 
 | Component | Model | Interface | Pins (S3) | Details / Configuration |
 |---|---|---|---|---|
@@ -90,10 +90,10 @@ Presentation ──► Application ──► Domain ◄── Infrastructure
 
 | Layer | Responsibility | Directory | Dependencies |
 |---|---|---|---|
-| **Domain** | Entities, interfaces, EKF, sensor fusion, thermodynamics, and acoustic models. Pure C++17, no framework code. | [Domain](file:///c:/Users/Jorge/Desktop/GLP_Presure/src/Domain) | None |
-| **Application** | Services (Config, Connectivity, Telemetry), DTOs, and the system state controller. Decoupled orchestration. | [Application](file:///c:/Users/Jorge/Desktop/GLP_Presure/src/Application) | Domain |
-| **Infrastructure** | Concrete implementations (WiFi, Cellular, MQTT, NVS, ADS1115 ADC, GPS, Ble/SoftAP provisioning, OTA). | [Infrastructure](file:///c:/Users/Jorge/Desktop/GLP_Presure/src/Infrastructure) | Domain |
-| **Presentation** | Setup and main loop execution. Serves as the composition root using manual dependency injection. | [Presentation](file:///c:/Users/Jorge/Desktop/GLP_Presure/src/Presentation) | Domain, Application, Infrastructure |
+| **Domain** | Entities, interfaces, EKF, sensor fusion, thermodynamics, and acoustic models. Pure C++17, no framework code. | [Domain](src/Domain) | None |
+| **Application** | Services (Config, Connectivity, Telemetry), DTOs, and the system state controller. Decoupled orchestration. | [Application](src/Application) | Domain |
+| **Infrastructure** | Concrete implementations (WiFi, Cellular, MQTT, NVS, ADS1115 ADC, GPS, Ble/SoftAP provisioning, OTA). | [Infrastructure](src/Infrastructure) | Domain |
+| **Presentation** | Setup and main loop execution. Serves as the composition root using manual dependency injection. | [Presentation](src/Presentation) | Domain, Application, Infrastructure |
 
 > Namespaces: `glp::domain`, `glp::app`, `glp::infra`, `glp::board`.
 
