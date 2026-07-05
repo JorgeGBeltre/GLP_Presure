@@ -33,6 +33,9 @@ endfunction()
 
 # --- Un ejecutable de test por servicio de Application (+ el algoritmo puro) --
 glp_add_test(test_sensor_fusion       test_sensor_fusion.cpp)
+glp_add_test(test_sensor_calibrator   test_sensor_calibrator.cpp)
+glp_add_test(test_tank_geometry       test_tank_geometry.cpp)
+glp_add_test(test_calibrating_sensor_reader test_calibrating_sensor_reader.cpp)
 glp_add_test(test_config_service      test_config_service.cpp)
 glp_add_test(test_connectivity_service test_connectivity_service.cpp)
 glp_add_test(test_telemetry_service   test_telemetry_service.cpp)

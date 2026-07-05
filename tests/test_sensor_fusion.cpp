@@ -54,3 +54,22 @@ TEST(SensorFusion, AnomalyWhenHighLevelButLowPressure) {
     EXPECT_LT(r.pressureBar, 1.0f);
     EXPECT_TRUE(r.anomaly);
 }
+
+TEST(SensorFusion, InvalidLevelHoldsEstimateAndGrowsUncertainty) {
+    SensorFusion f;
+    f.reset();
+    const TankDimensions tank{500.0f, 1000.0f};
+
+    // Converger con lecturas válidas a 500mm.
+    const VolumeEstimate conv = feedManyTimes(f, {500.0f, 6.0f, 15.0f}, tank, 300);
+    ASSERT_NEAR(conv.levelMm, 500.0f, 5.0f);
+    const float sigmaConverged = conv.kalmanUncertaintyMm;
+
+    // Una lectura de nivel inválida (con un valor basura que NO debe entrar).
+    SensorSample bad{0.0f, 6.0f, 15.0f};
+    bad.levelValid = false;
+    const VolumeEstimate held = f.process(bad, tank);
+
+    EXPECT_NEAR(held.levelMm, 500.0f, 5.0f);              // se sostiene, no cae a 0
+    EXPECT_GT(held.kalmanUncertaintyMm, sigmaConverged);  // la incertidumbre crece
+}

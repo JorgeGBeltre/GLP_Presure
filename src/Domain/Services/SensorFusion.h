@@ -34,17 +34,21 @@ public:
     VolumeEstimate process(const SensorSample& s, const TankDimensions& tank) {
         VolumeEstimate r;
 
-        // 1. Filtrar nivel con Kalman
-        r.levelMm = kfLevel_.update(s.levelRawMm);
+        // 1. Nivel: Kalman si es válido; si no, sólo predicción (sostiene y crece σ).
+        if (s.levelValid) r.levelMm = kfLevel_.update(s.levelRawMm);
+        else { kfLevel_.predict(); r.levelMm = kfLevel_.estimate(); }
         r.kalmanUncertaintyMm = std::sqrt(kfLevel_.uncertainty());
 
-        // 2. Filtrar presión con Kalman
-        r.pressureBar = kfPressure_.update(s.pressureRawBar);
+        // 2. Presión: idem.
+        if (s.pressureValid) r.pressureBar = kfPressure_.update(s.pressureRawBar);
+        else { kfPressure_.predict(); r.pressureBar = kfPressure_.estimate(); }
 
-        // 3. Suavizar temperatura (EMA α=0.1 — cambios muy lentos)
-        tempEma_ = uninit(tempEma_) ? s.tempRawC
-                                    : 0.1f * s.tempRawC + 0.9f * tempEma_;
-        r.tempCelsius = tempEma_;
+        // 3. Temperatura (EMA): si es inválida, se sostiene el último valor.
+        if (s.tempValid) {
+            tempEma_ = uninit(tempEma_) ? s.tempRawC
+                                        : 0.1f * s.tempRawC + 0.9f * tempEma_;
+        }
+        r.tempCelsius = uninit(tempEma_) ? s.tempRawC : tempEma_;
 
         // 4. Densidad del GLP en función de la temperatura
         r.densityKgL = 0.58f - 0.00125f * (r.tempCelsius - 15.0f);

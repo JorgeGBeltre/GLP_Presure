@@ -51,3 +51,26 @@ TEST(ConfigService, EmptyRemoteUpdateDoesNotPersist) {
     EXPECT_FALSE(svc.applyRemoteUpdate(app::RemoteConfigUpdate{}));
     EXPECT_EQ(repo.saveCount, 0);
 }
+
+TEST(ConfigService, ExposesSensorCalibration) {
+    FakeConfigRepository repo;
+    app::ConfigService svc{repo};
+    svc.mutableConfig().calibration.pressSlope = 20.0f;
+    EXPECT_FLOAT_EQ(svc.sensorCalibration().pressSlope, 20.0f);
+}
+
+TEST(ConfigService, ApplyRemoteUpdateSetsCalibrationFields) {
+    FakeConfigRepository repo;
+    app::ConfigService svc{repo};
+
+    app::RemoteConfigUpdate update;
+    update.tankHeightCm = 100.0f;
+    update.pressSlope   = 20.0f;
+    update.tempOffsetC  = -0.3f;
+
+    EXPECT_TRUE(svc.applyRemoteUpdate(update));
+    EXPECT_FLOAT_EQ(svc.config().tankHeightCm, 100.0f);
+    EXPECT_FLOAT_EQ(svc.config().calibration.pressSlope, 20.0f);
+    EXPECT_FLOAT_EQ(svc.config().calibration.tempOffsetC, -0.3f);
+    EXPECT_GE(repo.saveCount, 1);
+}
