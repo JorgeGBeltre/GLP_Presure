@@ -14,19 +14,21 @@ void initSensors() {
     analogReadResolution(12);
 }
 
-float readUltrasonicRawMM() {
+// Devuelve false si el eco expira (pulseIn==0). La distancia usa la c del aire;
+// la corrección por velocidad del sonido es Tier 3.
+bool readUltrasonicRaw(float& outMm) {
     digitalWrite(TRIG_PIN, LOW);
     delayMicroseconds(2);
     digitalWrite(TRIG_PIN, HIGH);
     delayMicroseconds(10);
     digitalWrite(TRIG_PIN, LOW);
-    
+
     long duration = pulseIn(ECHO_PIN, HIGH, 30000); // 30ms timeout
-    if (duration == 0) return 0.0f; // Timeout
-    
+    if (duration == 0) { outMm = 0.0f; return false; } // timeout -> inválido
+
     // speed of sound = 343 m/s = 0.343 mm/us
-    float distance_mm = (duration * 0.343f) / 2.0f;
-    return distance_mm;
+    outMm = (duration * 0.343f) / 2.0f;
+    return true;
 }
 
 float readPressureRawBar() {
