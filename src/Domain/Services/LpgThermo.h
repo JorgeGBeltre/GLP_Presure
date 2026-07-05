@@ -70,6 +70,21 @@ public:
         return 0.5f * (lo + hi);
     }
 
+    /**
+     * Velocidad del sonido en el VAPOR de GLP (m/s): c = √(γ·Z·R·T/M), gas real con
+     * factor de compresibilidad Z≈0.8 a saturación. γ y M ponderados por composición.
+     * Propano puro a 25 °C ≈ 225 m/s (NO los 343 del aire).
+     */
+    static float soundSpeedVaporMs(float tempC, float propaneFraction) {
+        const float frac  = std::clamp(propaneFraction, 0.0f, 1.0f);
+        const float gamma = frac * 1.13f   + (1.0f - frac) * 1.09f;    // propano/butano
+        const float M     = frac * 0.0441f + (1.0f - frac) * 0.0581f;  // kg/mol
+        const float Z     = 0.80f;                                     // compresibilidad (saturado)
+        const float R     = 8.314f;
+        const float tK    = tempC + 273.15f;
+        return std::sqrt(gamma * Z * R * tK / M);
+    }
+
 private:
     static float antoine(float tK, float A, float B, float C) {
         return std::pow(10.0f, A - B / (C + tK));

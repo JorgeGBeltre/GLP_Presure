@@ -59,3 +59,12 @@ TEST(LpgThermo, InverseVaporPressureRoundTrips) {
         EXPECT_NEAR(LpgThermo::temperatureFromVaporPressure(p, 1.0f), t, 0.1f);
     }
 }
+
+TEST(LpgThermo, VaporSoundSpeedPropaneAbout225) {
+    EXPECT_NEAR(LpgThermo::soundSpeedVaporMs(25.0f, 1.0f), 225.0f, 6.0f); // no 343 (aire)
+}
+
+TEST(LpgThermo, VaporSoundSpeedRisesWithTemperature) {
+    EXPECT_GT(LpgThermo::soundSpeedVaporMs(40.0f, 1.0f),
+              LpgThermo::soundSpeedVaporMs(0.0f, 1.0f));
+}
