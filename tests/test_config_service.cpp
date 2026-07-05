@@ -74,3 +74,14 @@ TEST(ConfigService, ApplyRemoteUpdateSetsCalibrationFields) {
     EXPECT_FLOAT_EQ(svc.config().calibration.tempOffsetC, -0.3f);
     EXPECT_GE(repo.saveCount, 1);
 }
+
+TEST(ConfigService, ApplyRemoteUpdateSetsPropaneFraction) {
+    FakeConfigRepository repo;
+    app::ConfigService svc{repo};
+
+    app::RemoteConfigUpdate update;
+    update.propaneFraction = 0.7f;
+
+    EXPECT_TRUE(svc.applyRemoteUpdate(update));
+    EXPECT_FLOAT_EQ(svc.propaneFraction(), 0.7f);
+}

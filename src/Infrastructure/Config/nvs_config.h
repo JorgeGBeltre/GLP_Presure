@@ -23,6 +23,7 @@ struct AppConfig {
     float temp_r_ref;
     float temp_v_exc;
     float temp_offset_c;
+    float propane_fraction;
     String ota_hmac_key;
 };
 

@@ -39,6 +39,7 @@ public:
         if (doc.containsKey("temp_r_ref"))      u.tempRRef      = doc["temp_r_ref"].as<float>();
         if (doc.containsKey("temp_v_exc"))      u.tempVExc      = doc["temp_v_exc"].as<float>();
         if (doc.containsKey("temp_offset_c"))   u.tempOffsetC   = doc["temp_offset_c"].as<float>();
+        if (doc.containsKey("propane_fraction")) u.propaneFraction = doc["propane_fraction"].as<float>();
         return u;
     }
 };
