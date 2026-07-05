@@ -10,6 +10,7 @@
 #include "Domain/Interfaces/IOtaService.h"
 #include "Domain/Interfaces/ISensorReader.h"
 #include "Domain/Interfaces/ITimeProvider.h"
+#include "Domain/Services/ConsumptionEstimator.h"
 #include "Domain/Services/SensorFusion.h"
 
 namespace glp::app {
@@ -37,7 +38,7 @@ public:
           device_(device), time_(time), serializer_(serializer), clock_(clock),
           config_(config), topics_(std::move(topics)), intervalMs_(intervalMs) {}
 
-    void resetFilters() { fusion_.reset(); }
+    void resetFilters() { fusion_.reset(); consumption_.reset(); }
     void loop();
     bool publishTelemetry();
 
@@ -56,7 +57,8 @@ private:
     MqttTopics                  topics_;
     unsigned long               intervalMs_;
 
-    domain::SensorFusion fusion_;
+    domain::SensorFusion         fusion_;
+    domain::ConsumptionEstimator consumption_;
     bool                 seeded_        = false;
     unsigned long        lastPublishMs_ = 0;
 };

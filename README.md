@@ -48,6 +48,8 @@ provisioning** (BLE, WiFi captive portal, and SmartConfig). Built on a four-laye
   configured at provisioning; ultrasonic level as `h = H − d` with dead-zone offset.
 - **Invalid-reading safety** — a timed-out/out-of-range channel makes the Kalman filter
   predict-only (holds the estimate, grows uncertainty) instead of ingesting garbage.
+- **Diagnostics** — per-sensor health scores (0–100), a pressure-vs-vapor-pressure
+  (Antoine) consistency check, and consumption rate (L/day) with estimated days remaining.
 - **Dynamic volume** — circular-segment formula for a horizontal cylindrical tank,
   with configurable dimensions.
 - **Mass & density** — interpolated propane/butane saturated-liquid density table
