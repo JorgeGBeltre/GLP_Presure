@@ -43,7 +43,10 @@ provisioning** (BLE, WiFi captive portal, and SmartConfig). Built on a four-laye
 
 ### Measurement
 - **Sensor fusion** — ultrasonic (level) + pressure + temperature.
-- **Scalar Kalman filter** per sensor: removes noise without adding latency.
+- **State filter (EKF `[level, temperature]`)** — the pressure sensor enters as a second
+  temperature measurement via inverse Antoine, so pressure sharpens the temperature estimate
+  (and thus density and mass). Density/volume/mass are outputs, never states; Joseph-form
+  covariance keeps it numerically stable.
 - **Sensor calibration** — Pt1000 (IEC 60751) temperature and 2-point linear pressure,
   configured at provisioning; ultrasonic level as `h = H − d` with dead-zone offset.
 - **Invalid-reading safety** — a timed-out/out-of-range channel makes the Kalman filter

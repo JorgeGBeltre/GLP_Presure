@@ -8,6 +8,7 @@
 #include "Domain/Entities/VolumeEstimate.h"
 #include "Domain/Services/KalmanFilter.h"
 #include "Domain/Services/LpgThermo.h"
+#include "Domain/Services/StateEkf.h"
 
 namespace glp::domain {
 
@@ -23,8 +24,9 @@ namespace glp::domain {
 class SensorFusion {
 public:
     SensorFusion()
-        : kfLevel_(0.005f, 2.5f),   // Q=0.005mm², R=2.5mm²
-          kfPressure_(0.01f, 0.5f)  // Q=0.01bar², R=0.5bar²
+        // EKF [h,T]: qH,qT (proceso); rH (ultrasónico); rT (Pt1000); rTfromP (T desde presión)
+        : ekf_(0.005f, 0.01f, 2.5f, 0.25f, 1.0f),
+          kfPressure_(0.01f, 0.5f)  // filtro de presión: sólo para reporte + inversa de Antoine
     {}
 
     /**
@@ -36,21 +38,21 @@ public:
                            float propaneFraction = 1.0f) {
         VolumeEstimate r;
 
-        // 1. Nivel: Kalman si es válido; si no, sólo predicción (sostiene y crece σ).
-        if (s.levelValid) r.levelMm = kfLevel_.update(s.levelRawMm);
-        else { kfLevel_.predict(); r.levelMm = kfLevel_.estimate(); }
-        r.kalmanUncertaintyMm = std::sqrt(kfLevel_.uncertainty());
-
-        // 2. Presión: idem.
+        // 1. Presión filtrada (para reporte y para la inversa de Antoine).
         if (s.pressureValid) r.pressureBar = kfPressure_.update(s.pressureRawBar);
         else { kfPressure_.predict(); r.pressureBar = kfPressure_.estimate(); }
 
-        // 3. Temperatura (EMA): si es inválida, se sostiene el último valor.
-        if (s.tempValid) {
-            tempEma_ = uninit(tempEma_) ? s.tempRawC
-                                        : 0.1f * s.tempRawC + 0.9f * tempEma_;
-        }
-        r.tempCelsius = uninit(tempEma_) ? s.tempRawC : tempEma_;
+        // 2. EKF [h, T] (opción B): nivel del ultrasónico, temperatura del Pt1000 y una
+        //    2ª medición de temperatura por Antoine⁻¹(P). Un canal inválido ⇒ ese estado
+        //    sólo predice (sostiene el valor y crece su σ).
+        const bool  tFromPValid = s.pressureValid && r.pressureBar > 0.5f;
+        const float tFromP = tFromPValid
+            ? LpgThermo::temperatureFromVaporPressure(r.pressureBar, propaneFraction)
+            : 0.0f;
+        ekf_.update(s.levelRawMm, s.levelValid, s.tempRawC, s.tempValid, tFromP, tFromPValid);
+        r.levelMm             = ekf_.level();
+        r.tempCelsius         = ekf_.temp();
+        r.kalmanUncertaintyMm = std::sqrt(ekf_.levelVar());
 
         // 4. Densidad del GLP por tabla interpolada (mezcla propano/butano)
         r.densityKgL = LpgThermo::densityKgL(r.tempCelsius, propaneFraction);
@@ -87,19 +89,15 @@ public:
 
     /** Reinicia los filtros (llamar tras provisioning con nuevas dimensiones). */
     void reset() {
-        kfLevel_.reset(0.0f, 100.0f);
+        ekf_.reset(0.0f, 15.0f, 100.0f);
         kfPressure_.reset(0.0f, 10.0f);
-        tempEma_ = kUninit;
     }
 
 private:
-    static constexpr float kPi     = 3.14159265358979323846f;
-    static constexpr float kUninit = -999.0f;
-    static bool uninit(float v) { return v <= kUninit; }
+    static constexpr float kPi = 3.14159265358979323846f;
 
-    KalmanFilter kfLevel_;
+    StateEkf     ekf_;
     KalmanFilter kfPressure_;
-    float        tempEma_ = kUninit; // -999 = no inicializado
 };
 
 } // namespace glp::domain
