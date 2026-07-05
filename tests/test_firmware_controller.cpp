@@ -24,12 +24,13 @@ struct Fixture {
 
     FakeSensorReader      sensors;
     FakeGpsProvider       gps;
+    FakeTiltProvider      tilt;
     FakeOtaService        ota;
     FakeDeviceRepository  device;
     FakeTimeProvider      time;
     FakePayloadSerializer serializer;
     FakeClock             clock;
-    app::TelemetryService telemetry{sensors, gps, conn, ota, device, time,
+    app::TelemetryService telemetry{sensors, gps, tilt, conn, ota, device, time,
                                     serializer, clock, config,
                                     app::MqttTopics::forDevice("chip"), 30000};
 
