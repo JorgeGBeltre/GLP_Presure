@@ -14,9 +14,10 @@ void initSensors() {
     analogReadResolution(12);
 }
 
-// Devuelve false si el eco expira (pulseIn==0). La distancia usa la c del aire;
-// la corrección por velocidad del sonido es Tier 3.
-bool readUltrasonicRaw(float& outMm) {
+// Devuelve el tiempo de ida y vuelta del eco en µs (o false si expira). La
+// conversión tiempo→velocidad→distancia se hace en el dominio (AcousticModel):
+// ninguna constante física vive ya en esta capa.
+bool readUltrasonicTimeUs(float& outUs) {
     digitalWrite(TRIG_PIN, LOW);
     delayMicroseconds(2);
     digitalWrite(TRIG_PIN, HIGH);
@@ -24,10 +25,9 @@ bool readUltrasonicRaw(float& outMm) {
     digitalWrite(TRIG_PIN, LOW);
 
     long duration = pulseIn(ECHO_PIN, HIGH, 30000); // 30ms timeout
-    if (duration == 0) { outMm = 0.0f; return false; } // timeout -> inválido
+    if (duration == 0) { outUs = 0.0f; return false; } // timeout -> inválido
 
-    // speed of sound = 343 m/s = 0.343 mm/us
-    outMm = (duration * 0.343f) / 2.0f;
+    outUs = static_cast<float>(duration);
     return true;
 }
 

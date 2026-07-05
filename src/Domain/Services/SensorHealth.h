@@ -29,6 +29,7 @@ public:
         SensorHealthScores h;
 
         if (!raw.levelValid) h.ultrasonic = 0.0f;
+        else if (!raw.acousticHealthy) h.ultrasonic = 60.0f; // reflector y gas discrepan
 
         if (!raw.tempValid) h.temperature = 0.0f;
         else if (est.tempCelsius < -40.0f || est.tempCelsius > 60.0f) h.temperature = 50.0f;

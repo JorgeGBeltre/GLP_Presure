@@ -55,6 +55,10 @@ provisioning** (BLE, WiFi captive portal, and SmartConfig). Built on a four-laye
   (Antoine) consistency check, and consumption rate (L/day) with estimated days remaining.
 - **Tilt compensation** — an optional MPU-6050 IMU corrects the level for tank pitch
   (axial-station de-bias) and computes volume by integrating the inclined liquid plane.
+- **Acoustic model** — speed of sound estimated in the LPG *vapor* (real-gas model,
+  ~225 m/s, not 343 air), optionally cross-checked against a reference reflector, with an
+  uncertainty `c ± σ`. Time-of-flight → distance → level lives entirely in the domain — no
+  physical constants baked into the hardware layer.
 - **Dynamic volume** — circular-segment formula for a horizontal cylindrical tank,
   with configurable dimensions.
 - **Mass & density** — interpolated propane/butane saturated-liquid density table

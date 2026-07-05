@@ -38,6 +38,18 @@ TEST(SensorHealth, PressureResidualDegradesPressureHealth) {
     EXPECT_NEAR(p, 70.0f, 0.5f);
 }
 
+TEST(SensorHealth, AcousticMismatchDegradesUltrasonic) {
+    SensorSample raw;                       // levelValid true por default
+    raw.acousticHealthy = false;
+    VolumeEstimate est;
+    est.tempCelsius = 25.0f;
+    est.pressureBar = LpgThermo::vaporPressureBar(25.0f, 1.0f);
+
+    const float u = SensorHealth::evaluate(est, raw, 1.0f).ultrasonic;
+    EXPECT_LT(u, 100.0f);
+    EXPECT_GT(u, 0.0f);
+}
+
 TEST(SensorHealth, TempOutOfRangeDegradesTemperature) {
     SensorSample raw;
     VolumeEstimate est;

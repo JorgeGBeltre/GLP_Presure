@@ -5,7 +5,7 @@
 namespace glp::infra {
 
 std::string ArduinoJsonPayloadSerializer::telemetry(const app::TelemetrySnapshot& s) {
-    DynamicJsonDocument doc(2048);
+    DynamicJsonDocument doc(2560);
 
     // ── Cabecera común "Device" ──────────────────────────────────
     JsonObject dev = doc.createNestedObject("Device");
@@ -71,6 +71,11 @@ std::string ArduinoJsonPayloadSerializer::telemetry(const app::TelemetrySnapshot
     JsonObject cons = d.createNestedObject("consumption");
     cons["l_per_day"]      = s.consumptionLpd;
     cons["remaining_days"] = s.remainingDays;
+
+    JsonObject acoustic = d.createNestedObject("acoustic");
+    acoustic["c_used_ms"] = s.raw.soundSpeedMs;
+    acoustic["source"]    = s.raw.reflectorUsed ? "reflector" : "gas_model";
+    acoustic["healthy"]   = s.raw.acousticHealthy;
 
     String out;
     serializeJson(doc, out);
