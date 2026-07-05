@@ -56,6 +56,20 @@ public:
         return frac * pP + (1.0f - frac) * pB;
     }
 
+    /**
+     * Inversa de vaporPressureBar: temperatura (°C) a partir de la presión de vapor
+     * (bar), por bisección (la curva es monótona creciente). Usada por el EKF para
+     * convertir la presión medida en una 2ª medición de temperatura.
+     */
+    static float temperatureFromVaporPressure(float pBar, float propaneFraction) {
+        float lo = -40.0f, hi = 60.0f;                 // rango operativo del GLP
+        for (int i = 0; i < 30; ++i) {
+            const float mid = 0.5f * (lo + hi);
+            if (vaporPressureBar(mid, propaneFraction) < pBar) lo = mid; else hi = mid;
+        }
+        return 0.5f * (lo + hi);
+    }
+
 private:
     static float antoine(float tK, float A, float B, float C) {
         return std::pow(10.0f, A - B / (C + tK));

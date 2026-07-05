@@ -52,3 +52,10 @@ TEST(LpgThermo, VaporPressureNoPoleNear24C) {
     EXPECT_LT(LpgThermo::vaporPressureBar(24.0f, 1.0f), 20.0f);
     EXPECT_GT(LpgThermo::vaporPressureBar(24.0f, 1.0f), 0.0f);
 }
+
+TEST(LpgThermo, InverseVaporPressureRoundTrips) {
+    for (float t : {-10.0f, 0.0f, 15.0f, 30.0f, 45.0f}) {
+        const float p = LpgThermo::vaporPressureBar(t, 1.0f);
+        EXPECT_NEAR(LpgThermo::temperatureFromVaporPressure(p, 1.0f), t, 0.1f);
+    }
+}
