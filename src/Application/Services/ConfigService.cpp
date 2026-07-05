@@ -25,6 +25,7 @@ bool ConfigService::applyRemoteUpdate(const RemoteConfigUpdate& update) {
     if (update.tempVExc)      { config_.calibration.tempVExc    = *update.tempVExc;    changed = true; }
     if (update.tempOffsetC)   { config_.calibration.tempOffsetC = *update.tempOffsetC; changed = true; }
     if (update.propaneFraction) { config_.propaneFraction = *update.propaneFraction; changed = true; }
+    if (update.sensorAxialCm)   { config_.sensorAxialCm   = *update.sensorAxialCm;   changed = true; }
 
     if (!changed) return false;
     return repo_.save(config_);

@@ -22,6 +22,7 @@
 #include "Domain/Interfaces/IProvisioningPortal.h"
 #include "Domain/Interfaces/IRawSensorReader.h"
 #include "Domain/Interfaces/ISensorReader.h"
+#include "Domain/Interfaces/ITiltProvider.h"
 #include "Domain/Interfaces/ISystemControl.h"
 #include "Domain/Interfaces/ITelemetryTransport.h"
 
@@ -58,6 +59,14 @@ public:
     bool            began = false;
     void begin() override { began = true; }
     RawSensorSample read() override { return next; }
+};
+
+class FakeTiltProvider : public ITiltProvider {
+public:
+    TiltReading next;
+    bool        began = false;
+    void begin() override { began = true; }
+    TiltReading read() override { return next; }
 };
 
 class FakeGpsProvider : public IGpsProvider {

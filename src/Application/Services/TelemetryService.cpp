@@ -28,7 +28,9 @@ bool TelemetryService::publishTelemetry() {
     gps_.feed();
     const domain::SensorSample   raw  = sensors_.read();
     const domain::TankDimensions tank = config_.tankDimensions();
-    const domain::VolumeEstimate est  = fusion_.process(raw, tank, config_.propaneFraction());
+    const domain::TiltReading    tilt = tilt_.read();
+    const domain::VolumeEstimate est  = fusion_.process(
+        raw, tank, config_.propaneFraction(), tilt, config_.sensorAxialCm() * 10.0f);
     const domain::GpsFix         fix  = gps_.location();
 
     // Diagnóstico (Tier 2): consumo, salud por sensor y presión de vapor esperada.

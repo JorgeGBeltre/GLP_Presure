@@ -42,6 +42,7 @@ struct DeviceConfig {
     float             mountOffsetCm = 0.0f;   // zona muerta/standoff no incluida en H
     SensorCalibration calibration{};
     float             propaneFraction = 1.0f;   // 1.0 = propano puro (mezcla propano/butano)
+    float             sensorAxialCm   = 0.0f;    // posición del sensor a lo largo del eje (tilt)
 
     // OTA
     std::string otaHmacKey;

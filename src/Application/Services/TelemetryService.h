@@ -7,6 +7,7 @@
 #include "Domain/Interfaces/IClock.h"
 #include "Domain/Interfaces/IDeviceRepository.h"
 #include "Domain/Interfaces/IGpsProvider.h"
+#include "Domain/Interfaces/ITiltProvider.h"
 #include "Domain/Interfaces/IOtaService.h"
 #include "Domain/Interfaces/ISensorReader.h"
 #include "Domain/Interfaces/ITimeProvider.h"
@@ -25,6 +26,7 @@ class TelemetryService {
 public:
     TelemetryService(domain::ISensorReader& sensors,
                      domain::IGpsProvider& gps,
+                     domain::ITiltProvider& tilt,
                      ConnectivityService& connectivity,
                      domain::IOtaService& ota,
                      domain::IDeviceRepository& device,
@@ -34,7 +36,7 @@ public:
                      ConfigService& config,
                      MqttTopics topics,
                      unsigned long intervalMs = 30000)
-        : sensors_(sensors), gps_(gps), conn_(connectivity), ota_(ota),
+        : sensors_(sensors), gps_(gps), tilt_(tilt), conn_(connectivity), ota_(ota),
           device_(device), time_(time), serializer_(serializer), clock_(clock),
           config_(config), topics_(std::move(topics)), intervalMs_(intervalMs) {}
 
@@ -47,6 +49,7 @@ private:
 
     domain::ISensorReader&      sensors_;
     domain::IGpsProvider&       gps_;
+    domain::ITiltProvider&      tilt_;
     ConnectivityService&        conn_;
     domain::IOtaService&        ota_;
     domain::IDeviceRepository&  device_;
