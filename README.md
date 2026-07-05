@@ -53,6 +53,8 @@ provisioning** (BLE, WiFi captive portal, and SmartConfig). Built on a four-laye
   predict-only (holds the estimate, grows uncertainty) instead of ingesting garbage.
 - **Diagnostics** — per-sensor health scores (0–100), a pressure-vs-vapor-pressure
   (Antoine) consistency check, and consumption rate (L/day) with estimated days remaining.
+- **Tilt compensation** — an optional MPU-6050 IMU corrects the level for tank pitch
+  (axial-station de-bias) and computes volume by integrating the inclined liquid plane.
 - **Dynamic volume** — circular-segment formula for a horizontal cylindrical tank,
   with configurable dimensions.
 - **Mass & density** — interpolated propane/butane saturated-liquid density table
