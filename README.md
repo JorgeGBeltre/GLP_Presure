@@ -50,7 +50,9 @@ provisioning** (BLE, WiFi captive portal, and SmartConfig). Built on a four-laye
   predict-only (holds the estimate, grows uncertainty) instead of ingesting garbage.
 - **Dynamic volume** — circular-segment formula for a horizontal cylindrical tank,
   with configurable dimensions.
-- **Density compensation** of LPG by temperature → gallons.
+- **Mass & density** — interpolated propane/butane saturated-liquid density table
+  (remote-configurable propane fraction), LPG **mass** `m = ρ(T)·V`, and a separate
+  volume-corrected-to-15 °C output (`liters_15c`) for custody/billing.
 - **Anomaly detection** — high level with low pressure (possible leak/faulty sensor).
 
 ### Connectivity
