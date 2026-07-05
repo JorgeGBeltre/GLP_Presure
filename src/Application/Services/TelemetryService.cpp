@@ -27,7 +27,7 @@ bool TelemetryService::publishTelemetry() {
     gps_.feed();
     const domain::SensorSample   raw  = sensors_.read();
     const domain::TankDimensions tank = config_.tankDimensions();
-    const domain::VolumeEstimate est  = fusion_.process(raw, tank);
+    const domain::VolumeEstimate est  = fusion_.process(raw, tank, config_.propaneFraction());
     const domain::GpsFix         fix  = gps_.location();
 
     TelemetrySnapshot snap;

@@ -41,6 +41,8 @@ std::string ArduinoJsonPayloadSerializer::telemetry(const app::TelemetrySnapshot
     vol["gallons"]      = s.estimate.gallons;
     vol["percentage"]   = s.estimate.percentage;
     vol["density_kg_l"] = s.estimate.densityKgL;
+    vol["mass_kg"]      = s.estimate.massKg;
+    vol["liters_15c"]   = s.estimate.volume15Liters;
     vol["anomaly"]      = s.estimate.anomaly;
 
     JsonObject tank = d.createNestedObject("tank");

@@ -73,3 +73,14 @@ TEST(SensorFusion, InvalidLevelHoldsEstimateAndGrowsUncertainty) {
     EXPECT_NEAR(held.levelMm, 500.0f, 5.0f);              // se sostiene, no cae a 0
     EXPECT_GT(held.kalmanUncertaintyMm, sigmaConverged);  // la incertidumbre crece
 }
+
+TEST(SensorFusion, ComputesMassAndVcf) {
+    SensorFusion f;
+    f.reset();
+    const TankDimensions tank{500.0f, 1000.0f};
+    const VolumeEstimate r = feedManyTimes(f, {500.0f, 6.0f, 15.0f}, tank, 300);
+
+    EXPECT_GT(r.massKg, 0.0f);
+    EXPECT_NEAR(r.massKg, r.densityKgL * r.volumeLiters, 1e-2f); // masa = ρ·V, sin double-count
+    EXPECT_GT(r.volume15Liters, 0.0f);
+}

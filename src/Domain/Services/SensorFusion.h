@@ -7,6 +7,7 @@
 #include "Domain/Entities/TankDimensions.h"
 #include "Domain/Entities/VolumeEstimate.h"
 #include "Domain/Services/KalmanFilter.h"
+#include "Domain/Services/LpgThermo.h"
 
 namespace glp::domain {
 
@@ -31,7 +32,8 @@ public:
      * @param s    Muestra cruda (nivel mm, presión bar, temp °C)
      * @param tank Dimensiones internas del tanque (mm)
      */
-    VolumeEstimate process(const SensorSample& s, const TankDimensions& tank) {
+    VolumeEstimate process(const SensorSample& s, const TankDimensions& tank,
+                           float propaneFraction = 1.0f) {
         VolumeEstimate r;
 
         // 1. Nivel: Kalman si es válido; si no, sólo predicción (sostiene y crece σ).
@@ -50,9 +52,8 @@ public:
         }
         r.tempCelsius = uninit(tempEma_) ? s.tempRawC : tempEma_;
 
-        // 4. Densidad del GLP en función de la temperatura
-        r.densityKgL = 0.58f - 0.00125f * (r.tempCelsius - 15.0f);
-        if (r.densityKgL < 0.45f) r.densityKgL = 0.45f; // límite físico
+        // 4. Densidad del GLP por tabla interpolada (mezcla propano/butano)
+        r.densityKgL = LpgThermo::densityKgL(r.tempCelsius, propaneFraction);
 
         // 5. Volumen del tanque cilíndrico horizontal (segmento circular)
         const float R = tank.radiusMm;
@@ -71,6 +72,10 @@ public:
 
         // 6. Litros → galones (1 L = 0.264172 gal)
         r.gallons = r.volumeLiters * 0.264172f;
+
+        // 6b. Masa y volumen corregido a 15 °C (facturación)
+        r.massKg         = LpgThermo::massKg(r.densityKgL, r.volumeLiters);
+        r.volume15Liters = LpgThermo::volume15C(r.massKg, propaneFraction);
 
         // 7. Detección de anomalía: coherencia nivel ↔ presión
         const bool highLevel   = (r.percentage > 5.0f);
