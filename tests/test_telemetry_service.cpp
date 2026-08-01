@@ -13,6 +13,7 @@ struct Fixture {
     app::ConfigService    config{repo};
     FakeSensorReader      sensors;
     FakeGpsProvider       gps;
+    FakeTiltProvider      tilt;
     FakeNetworkLink       wifi{LinkType::Wifi};
     FakeNetworkLink       cellular{LinkType::Cellular};
     FakeTransport         transport;
@@ -24,7 +25,7 @@ struct Fixture {
     FakePayloadSerializer serializer;
     FakeClock             clock;
 
-    app::TelemetryService svc{sensors, gps, conn, ota, device, time, serializer,
+    app::TelemetryService svc{sensors, gps, tilt, conn, ota, device, time, serializer,
                               clock, config, app::MqttTopics::forDevice("chip"), 30000};
 
     Fixture() {

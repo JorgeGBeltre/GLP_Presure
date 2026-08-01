@@ -3,6 +3,8 @@
 #include <string>
 #include <cstdint>
 
+#include "Domain/Entities/SensorCalibration.h"
+
 namespace glp::domain {
 
 /**
@@ -34,6 +36,14 @@ struct DeviceConfig {
     std::string deviceId;
     float       tankRadiusCm = 0.0f;
     float       tankLengthCm = 0.0f;
+
+    // Geometría adicional para el nivel (h = H − d) y calibración de sensores
+    float             tankHeightCm  = 0.0f;   // H: plano del sensor → piso interior
+    float             mountOffsetCm = 0.0f;   // zona muerta/standoff no incluida en H
+    SensorCalibration calibration{};
+    float             propaneFraction = 1.0f;   // 1.0 = propano puro (mezcla propano/butano)
+    float             sensorAxialCm   = 0.0f;    // posición del sensor a lo largo del eje (tilt)
+    float             refDistanceCm   = 0.0f;    // distancia al reflector de referencia acústico
 
     // OTA
     std::string otaHmacKey;

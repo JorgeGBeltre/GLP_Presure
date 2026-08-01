@@ -20,7 +20,9 @@
 #include "Domain/Interfaces/INetworkLink.h"
 #include "Domain/Interfaces/IOtaService.h"
 #include "Domain/Interfaces/IProvisioningPortal.h"
+#include "Domain/Interfaces/IRawSensorReader.h"
 #include "Domain/Interfaces/ISensorReader.h"
+#include "Domain/Interfaces/ITiltProvider.h"
 #include "Domain/Interfaces/ISystemControl.h"
 #include "Domain/Interfaces/ITelemetryTransport.h"
 
@@ -49,6 +51,22 @@ public:
 
     void begin() override { began = true; }
     SensorSample read() override { return next; }
+};
+
+class FakeRawSensorReader : public IRawSensorReader {
+public:
+    RawSensorSample next;
+    bool            began = false;
+    void begin() override { began = true; }
+    RawSensorSample read() override { return next; }
+};
+
+class FakeTiltProvider : public ITiltProvider {
+public:
+    TiltReading next;
+    bool        began = false;
+    void begin() override { began = true; }
+    TiltReading read() override { return next; }
 };
 
 class FakeGpsProvider : public IGpsProvider {

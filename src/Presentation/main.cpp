@@ -38,7 +38,9 @@
 #include "Infrastructure/Net/WifiLink.h"
 #include "Infrastructure/Ota/Mqttv5OtaService.h"
 #include "Infrastructure/Provisioning/ProvisioningPortals.h"
-#include "Infrastructure/Sensors/Esp32SensorReader.h"
+#include "Infrastructure/Sensors/Esp32RawSensorReader.h"
+#include "Infrastructure/Sensors/Mpu6050TiltProvider.h"
+#include "Domain/Services/CalibratingSensorReader.h"
 #include "Infrastructure/Serialization/ArduinoJsonPayloadSerializer.h"
 #include "Infrastructure/System/EspSystemControl.h"
 #include "Infrastructure/Time/ArduinoClock.h"
@@ -57,7 +59,8 @@ static infra::SerialLogger                 g_logger;
 static infra::EspSystemControl             g_system;
 static infra::GpioIndicator                g_indicator{LED_PIN};
 static infra::NvsConfigRepository          g_configRepo;
-static infra::Esp32SensorReader            g_sensors;
+static infra::Esp32RawSensorReader         g_rawSensors;
+static infra::Mpu6050TiltProvider          g_tilt;
 static infra::TinyGpsProvider              g_gps;
 static infra::CellularLink                 g_cellular;
 static infra::Mqttv5Transport              g_transport;
@@ -91,12 +94,16 @@ void setup() {
     pinMode(BOOT_BTN_PIN, INPUT_PULLUP);
 
     g_configRepo.begin();
-    g_sensors.begin();
+    g_rawSensors.begin();
+    g_tilt.begin();
     g_gps.begin();
 
     // Servicios de Application (static => viven toda la ejecución).
     static app::ConfigService config{g_configRepo};
     config.load();
+
+    // Reader calibrado: crudo (ADS1115 + ultrasónico) -> físico, leyendo la config viva.
+    static domain::CalibratingSensorReader sensors{g_rawSensors, config.config()};
 
     // Enlace WiFi: lee SSID/clave de la config viva (uplink preferido si existe).
     static infra::WifiLink wifi{config.config()};
@@ -105,7 +112,7 @@ void setup() {
     const app::MqttTopics topics = app::MqttTopics::forDevice(config.config().deviceId);
 
     static app::TelemetryService telemetry{
-        g_sensors, g_gps, connectivity, g_ota, g_device, g_time, g_serializer,
+        sensors, g_gps, g_tilt, connectivity, g_ota, g_device, g_time, g_serializer,
         g_clock, config, topics, TELEMETRY_INTERVAL_MS};
 
     g_time.sync();   // registra SNTP (UTC); resuelve en background al haber red

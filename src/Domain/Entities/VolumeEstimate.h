@@ -14,6 +14,8 @@ struct VolumeEstimate {
     float gallons             = 0.0f; // galones de GLP
     float percentage          = 0.0f; // porcentaje de llenado
     float densityKgL          = 0.0f; // densidad del GLP a temperatura actual
+    float massKg              = 0.0f; // masa de GLP = densidad × volumen
+    float volume15Liters      = 0.0f; // volumen corregido a 15 °C (facturación / VCF)
     bool  anomaly             = false; // presión y nivel inconsistentes
     float kalmanUncertaintyMm = 0.0f; // incertidumbre actual del filtro de nivel
 };

@@ -7,9 +7,11 @@
 #include "Domain/Interfaces/IClock.h"
 #include "Domain/Interfaces/IDeviceRepository.h"
 #include "Domain/Interfaces/IGpsProvider.h"
+#include "Domain/Interfaces/ITiltProvider.h"
 #include "Domain/Interfaces/IOtaService.h"
 #include "Domain/Interfaces/ISensorReader.h"
 #include "Domain/Interfaces/ITimeProvider.h"
+#include "Domain/Services/ConsumptionEstimator.h"
 #include "Domain/Services/SensorFusion.h"
 
 namespace glp::app {
@@ -24,6 +26,7 @@ class TelemetryService {
 public:
     TelemetryService(domain::ISensorReader& sensors,
                      domain::IGpsProvider& gps,
+                     domain::ITiltProvider& tilt,
                      ConnectivityService& connectivity,
                      domain::IOtaService& ota,
                      domain::IDeviceRepository& device,
@@ -33,11 +36,11 @@ public:
                      ConfigService& config,
                      MqttTopics topics,
                      unsigned long intervalMs = 30000)
-        : sensors_(sensors), gps_(gps), conn_(connectivity), ota_(ota),
+        : sensors_(sensors), gps_(gps), tilt_(tilt), conn_(connectivity), ota_(ota),
           device_(device), time_(time), serializer_(serializer), clock_(clock),
           config_(config), topics_(std::move(topics)), intervalMs_(intervalMs) {}
 
-    void resetFilters() { fusion_.reset(); }
+    void resetFilters() { fusion_.reset(); consumption_.reset(); }
     void loop();
     bool publishTelemetry();
 
@@ -46,6 +49,7 @@ private:
 
     domain::ISensorReader&      sensors_;
     domain::IGpsProvider&       gps_;
+    domain::ITiltProvider&      tilt_;
     ConnectivityService&        conn_;
     domain::IOtaService&        ota_;
     domain::IDeviceRepository&  device_;
@@ -56,7 +60,8 @@ private:
     MqttTopics                  topics_;
     unsigned long               intervalMs_;
 
-    domain::SensorFusion fusion_;
+    domain::SensorFusion         fusion_;
+    domain::ConsumptionEstimator consumption_;
     bool                 seeded_        = false;
     unsigned long        lastPublishMs_ = 0;
 };

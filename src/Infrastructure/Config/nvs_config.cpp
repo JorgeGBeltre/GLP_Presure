@@ -28,6 +28,16 @@ void loadConfig() {
     config.device_id = preferences.getString("device_id", "GLP-001");
     config.tank_radius_cm = preferences.getFloat("radius", 45.0f);
     config.tank_length_cm = preferences.getFloat("length", 120.0f);
+    config.tank_height_cm = preferences.getFloat("height", 0.0f);
+    config.mount_offset_cm = preferences.getFloat("mount_off", 0.0f);
+    config.press_slope = preferences.getFloat("p_slope", 0.0f);
+    config.press_offset = preferences.getFloat("p_offset", 0.0f);
+    config.temp_r_ref = preferences.getFloat("t_rref", 1000.0f);
+    config.temp_v_exc = preferences.getFloat("t_vexc", 3.30f);
+    config.temp_offset_c = preferences.getFloat("t_offc", 0.0f);
+    config.propane_fraction = preferences.getFloat("propane_fr", 1.0f);
+    config.sensor_axial_cm = preferences.getFloat("sensor_ax", 0.0f);
+    config.ref_distance_cm = preferences.getFloat("ref_dist", 0.0f);
     config.ota_hmac_key = preferences.getString("ota_hmac", "");
     preferences.end();
 }
@@ -46,6 +56,16 @@ void saveConfig() {
     preferences.putString("device_id", config.device_id);
     preferences.putFloat("radius", config.tank_radius_cm);
     preferences.putFloat("length", config.tank_length_cm);
+    preferences.putFloat("height", config.tank_height_cm);
+    preferences.putFloat("mount_off", config.mount_offset_cm);
+    preferences.putFloat("p_slope", config.press_slope);
+    preferences.putFloat("p_offset", config.press_offset);
+    preferences.putFloat("t_rref", config.temp_r_ref);
+    preferences.putFloat("t_vexc", config.temp_v_exc);
+    preferences.putFloat("t_offc", config.temp_offset_c);
+    preferences.putFloat("propane_fr", config.propane_fraction);
+    preferences.putFloat("sensor_ax", config.sensor_axial_cm);
+    preferences.putFloat("ref_dist", config.ref_distance_cm);
     preferences.putString("ota_hmac", config.ota_hmac_key);
     preferences.putBool("provisioned", true);
     preferences.end();

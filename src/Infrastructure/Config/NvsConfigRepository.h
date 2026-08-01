@@ -46,6 +46,16 @@ private:
         d.deviceId    = c.device_id.c_str();
         d.tankRadiusCm = c.tank_radius_cm;
         d.tankLengthCm = c.tank_length_cm;
+        d.tankHeightCm  = c.tank_height_cm;
+        d.mountOffsetCm = c.mount_offset_cm;
+        d.calibration.pressSlope  = c.press_slope;
+        d.calibration.pressOffset = c.press_offset;
+        d.calibration.tempRRef    = c.temp_r_ref;
+        d.calibration.tempVExc    = c.temp_v_exc;
+        d.calibration.tempOffsetC = c.temp_offset_c;
+        d.propaneFraction = c.propane_fraction;
+        d.sensorAxialCm = c.sensor_axial_cm;
+        d.refDistanceCm = c.ref_distance_cm;
         d.otaHmacKey  = c.ota_hmac_key.c_str();
         return d;
     }
@@ -64,6 +74,16 @@ private:
         c.device_id   = d.deviceId.c_str();
         c.tank_radius_cm = d.tankRadiusCm;
         c.tank_length_cm = d.tankLengthCm;
+        c.tank_height_cm  = d.tankHeightCm;
+        c.mount_offset_cm = d.mountOffsetCm;
+        c.press_slope  = d.calibration.pressSlope;
+        c.press_offset = d.calibration.pressOffset;
+        c.temp_r_ref   = d.calibration.tempRRef;
+        c.temp_v_exc   = d.calibration.tempVExc;
+        c.temp_offset_c = d.calibration.tempOffsetC;
+        c.propane_fraction = d.propaneFraction;
+        c.sensor_axial_cm = d.sensorAxialCm;
+        c.ref_distance_cm = d.refDistanceCm;
         c.ota_hmac_key = d.otaHmacKey.c_str();
         return c;
     }

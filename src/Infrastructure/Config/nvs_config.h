@@ -16,6 +16,16 @@ struct AppConfig {
     String device_id;
     float tank_radius_cm;
     float tank_length_cm;
+    float tank_height_cm;
+    float mount_offset_cm;
+    float press_slope;
+    float press_offset;
+    float temp_r_ref;
+    float temp_v_exc;
+    float temp_offset_c;
+    float propane_fraction;
+    float sensor_axial_cm;
+    float ref_distance_cm;
     String ota_hmac_key;
 };
 

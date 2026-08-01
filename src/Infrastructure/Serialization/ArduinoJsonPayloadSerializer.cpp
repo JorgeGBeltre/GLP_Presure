@@ -5,7 +5,7 @@
 namespace glp::infra {
 
 std::string ArduinoJsonPayloadSerializer::telemetry(const app::TelemetrySnapshot& s) {
-    DynamicJsonDocument doc(1536);
+    DynamicJsonDocument doc(2560);
 
     // ── Cabecera común "Device" ──────────────────────────────────
     JsonObject dev = doc.createNestedObject("Device");
@@ -41,6 +41,8 @@ std::string ArduinoJsonPayloadSerializer::telemetry(const app::TelemetrySnapshot
     vol["gallons"]      = s.estimate.gallons;
     vol["percentage"]   = s.estimate.percentage;
     vol["density_kg_l"] = s.estimate.densityKgL;
+    vol["mass_kg"]      = s.estimate.massKg;
+    vol["liters_15c"]   = s.estimate.volume15Liters;
     vol["anomaly"]      = s.estimate.anomaly;
 
     JsonObject tank = d.createNestedObject("tank");
@@ -55,6 +57,25 @@ std::string ArduinoJsonPayloadSerializer::telemetry(const app::TelemetrySnapshot
     d["rssi"]      = s.metrics.rssi;
     d["free_heap"] = s.metrics.freeHeap;
     d["uptime"]    = s.metrics.uptime;
+
+    JsonObject health = d.createNestedObject("health");
+    health["ultrasonic"]  = s.health.ultrasonic;
+    health["pressure"]    = s.health.pressure;
+    health["temperature"] = s.health.temperature;
+
+    JsonObject vapor = d.createNestedObject("vapor_check");
+    vapor["p_measured"] = s.estimate.pressureBar;
+    vapor["p_antoine"]  = s.vaporPressureBar;
+    vapor["residual"]   = s.estimate.pressureBar - s.vaporPressureBar;
+
+    JsonObject cons = d.createNestedObject("consumption");
+    cons["l_per_day"]      = s.consumptionLpd;
+    cons["remaining_days"] = s.remainingDays;
+
+    JsonObject acoustic = d.createNestedObject("acoustic");
+    acoustic["c_used_ms"] = s.raw.soundSpeedMs;
+    acoustic["source"]    = s.raw.reflectorUsed ? "reflector" : "gas_model";
+    acoustic["healthy"]   = s.raw.acousticHealthy;
 
     String out;
     serializeJson(doc, out);

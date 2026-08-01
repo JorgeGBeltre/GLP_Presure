@@ -6,6 +6,7 @@ on:
       - main
       - develop
       - feature
+      - 'feature/**'
   pull_request:
   workflow_dispatch:
 
@@ -32,12 +33,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: gtest-${{ runner.os }}-${{ hashFiles('src/tests/CMakeLists.txt') }}
+          key: gtest-${{ runner.os }}-${{ hashFiles('tests/CMakeLists.txt') }}
           restore-keys: |
             gtest-${{ runner.os }}-
 
       - name: Configurar (CMake)
-        run: cmake -S src -B build -G Ninja -DTOOUR_BUILD_TESTS=ON
+        run: cmake -S . -B build -G Ninja -DGLP_BUILD_TESTS=ON
 
       - name: Compilar
         run: cmake --build build --parallel
@@ -63,7 +64,7 @@ jobs:
           path: |
             ~/.platformio
             ~/.cache/pip
-          key: pio-${{ runner.os }}-${{ hashFiles('src/platformio.ini') }}
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
           restore-keys: |
             pio-${{ runner.os }}-
 
@@ -73,4 +74,36 @@ jobs:
           pip install platformio
 
       - name: Compilar firmware
-        run: pio run -d src -e esp32dev
+        run: pio run -e esp32-s3-n16r8
+
+  automerge:
+    name: Auto-Merge Workflow
+    needs: [host-tests, firmware-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge feature branch into develop and push
+        if: github.event_name == 'push' && (github.ref_name == 'feature' || startsWith(github.ref_name, 'feature/'))
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout develop
+          git merge --no-ff ${{ github.ref_name }} -m "Auto-merge ${{ github.ref_name }} to develop"
+          git push origin develop
+
+      - name: Merge develop into main and push
+        if: github.event_name == 'push' && github.ref_name == 'develop'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git merge --no-ff develop -m "Auto-merge develop to main"
+          git push origin main
+
