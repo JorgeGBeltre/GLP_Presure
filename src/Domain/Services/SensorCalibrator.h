@@ -21,21 +21,31 @@ public:
 
     /** R (Ω) → °C. Forma cerrada (rama T≥0) como semilla + 3 Newton sobre la CVD completa. */
     static float pt1000ToCelsius(float r) {
+        if (r <= 100.0f) return -200.0f;
+        if (r >= 3500.0f) return 600.0f;
+
         const float disc = kA * kA - 4.0f * kB * (1.0f - r / kR0);
+        if (disc < 0.0f) return (r < kR0) ? -200.0f : 600.0f;
+
         float t = (-kA + std::sqrt(disc)) / (2.0f * kB);   // semilla (negativa si r<R0)
         for (int i = 0; i < 3; ++i) {
             const float rt   = resistanceAt(t);
             const float drdt = (t >= 0.0f)
                 ? kR0 * (kA + 2.0f * kB * t)
                 : kR0 * (kA + 2.0f * kB * t + kC * (4.0f * t * t * t - 300.0f * t * t));
-            t -= (rt - r) / drdt;
+            if (std::fabs(drdt) > 1e-6f) {
+                t -= (rt - r) / drdt;
+            }
         }
         return t;
     }
 
     /** Divisor Pt1000 en brazo bajo: Vpin sobre Pt1000, Rref a Vexc. Devuelve R_pt (Ω). */
     static float resistanceFromVolts(float vPin, float rRef, float vExc) {
-        return rRef * vPin / (vExc - vPin);
+        if (vPin <= 0.0f) return 0.0f;
+        const float denom = vExc - vPin;
+        if (denom <= 1e-4f) return 1e6f; // casi abierto / riel alto
+        return rRef * vPin / denom;
     }
 
     /** Presión lineal de 2 puntos: bar = slope*V + offset. */

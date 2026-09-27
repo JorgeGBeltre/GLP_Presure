@@ -43,8 +43,10 @@ public:
 
 private:
     static float segmentAreaMm2(float h, float R) {
-        const float hh    = std::clamp(h, 0.0f, 2.0f * R);
-        const float theta = 2.0f * std::acos((R - hh) / R);
+        if (R <= 0.0f) return 0.0f;
+        const float hh     = std::clamp(h, 0.0f, 2.0f * R);
+        const float cosVal = std::clamp((R - hh) / R, -1.0f, 1.0f);
+        const float theta  = 2.0f * std::acos(cosVal);
         return R * R * (theta - std::sin(theta)) / 2.0f;
     }
 };

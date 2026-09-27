@@ -35,13 +35,13 @@ Firmware for **remote measurement of Liquefied Petroleum Gas (LPG)** in horizont
 ## Key Features
 
 ### Measurement & Fusion
-- **Joint 2D Extended Kalman Filter (EKF)**: Fuses level measurements with a joint state vector $x = [h, T]^T$ (liquid level in mm, temperature in °C). Pressure enters the filter as a second temperature observation via the inverse Antoine equation, sharpening the temperature estimate to reduce variance in density, volume, and mass. Joseph-form covariance updates ensure numerical stability.
+- **Joint 2D Extended Kalman Filter (EKF)**: Fuses level measurements with a joint state vector $x = [h, T]^T$ (liquid level in mm, temperature in °C). Pressure enters the filter via a genuine non-linear measurement model $h_P(x) = P_{sat}(T)$ with an analytical Jacobian $H_P = [0, \frac{dP_{sat}}{dT}(\hat{T})]$ derived directly from NIST Antoine equations. Includes a $3\sigma$ Mahalanobis gating threshold ($y^2 / S \le 9.0$) to reject outliers, leaks, and transducer faults. Covariances are updated in numerically stabilized Joseph form to maintain positive-definiteness on 32-bit floating point.
 - **LPG Thermodynamics (GPA/NIST)**: Saturated liquid density is dynamically calculated via linear interpolation of Propane and Butane density tables based on a remote-configurable propane fraction (`propaneFraction` $\in [0.0, 1.0]$).
 - **Billing Correction (VCF)**: Computes physical volume, total mass ($m = \rho(T) \cdot V$), and a standardized volume corrected to 15 °C (`liters_15c`) for billing accuracy.
 - **Acoustic Model**: Speed of sound is estimated in the LPG *vapor* (not air) taking real-gas compressibility ($Z \approx 0.8$) and composition into account. Supports a physical reference reflector for automatic speed-of-sound calibration and drift correction.
-- **Tilt Compensation**: Corrects ultrasonic level for tank pitch (axial sensor position offset de-bias) and integrates volume across the inclined cylinder segment via 24-point numerical quadrature.
+- **Tilt Compensation**: Corrects ultrasonic level for tank pitch (axial sensor position offset de-bias) and integrates volume across the inclined cylinder segment via 24-point numerical quadrature with domain-safe trigonometric clamping.
 - **Health Diagnostics**: Computes per-sensor health scores (0-100), detects pressure/temperature consistency anomalies against the Antoine vapor pressure curve, and flags physical device anomalies.
-- **Autonomy Prediction**: Estimates consumption rate (L/day) using an Exponential Moving Average (EMA, $\alpha=0.2$) on volume reductions, and computes remaining operational days.
+- **Autonomy Prediction**: Estimates consumption rate (L/day) using an Exponential Moving Average (EMA, $\alpha=0.2$) on volume reductions with noise rectification rejection and robust refill detection, and computes remaining operational days.
 
 ### Connectivity
 - **Dual Uplink**: Smart dual connectivity with WiFi as the preferred link and automatic fallback to 4G/LTE cellular (SIM7600).
@@ -189,41 +189,62 @@ Raw Inputs                     Signal Processing                     Outputs & S
 ─────────────────              ─────────────────                     ─────────────────
 Ultrasonic tFlight ──► [Acoustic Model] ──► Level d ─────────────────┐
 Pt1000 Temp V ───────► [Calibration]   ──► Temp Pt1000 ──────────────┼──► [State EKF (2D)]
-Pressure V ──────────► [Calibration]   ──► Pressure P ──► [Antoine⁻¹] ┘    ├─ Level h_est ──► [Volume Tilted] ──► volume, gallons, %
-                                                                             └─ Temp t_est  ──► [LpgThermo] ─────► density, mass, liters_15c
+Pressure V ──────────► [Calibration]   ──► Pressure P_meas (bar) ────┘    ├─ Level h_est ──► [Tilt & Volume] ──► volume, gallons, %
+                                                                          └─ Temp t_est  ──► [LpgThermo] ──────► density, mass, liters_15c
 
-* Note: Pressure also passes through a separate 1D Kalman Filter for reporting and Antoine calculation.
+* Note: Pressure also passes through a separate 1D Kalman filter solely for telemetry reporting smoothing.
 ```
 
-### 1. Extended Kalman Filter (EKF)
-Fuses ultrasonic distance, Pt1000 RTD resistance, and pressure via a 2D state vector $x = [h, T]^T$.
-- **Antoine Inverse**: Translates measured vapor pressure $P$ into a secondary temperature reading:
-  $$\log_{10}(P) = A - \frac{B}{C + T_K}$$
-- **Sequential Scalar Update**: Applies corrections sequentially (since measurements are uncorrelated/diagonal noise matrices), preventing matrix inversions.
-- **Joseph-Form Covariance**: Updates state uncertainty covariance matrix $P$ to guarantee numerical stability:
-  $$P_k = (I - K_k H_k) P_{k|k-1} (I - K_k H_k)^T + K_k R_k K_k^T$$
+### 1. Extended Kalman Filter (EKF) Formulation
+Fuses ultrasonic liquid distance, Pt1000 RTD resistance, and vapor pressure using a joint 2D state vector $x = [h, T]^T$ (liquid level in mm, temperature in °C).
 
-#### EKF Calibration and Noise Covariances:
-- **Process Noise (Q)**: Level $q_h = 0.005\text{ mm}^2$, Temperature $q_T = 0.01\text{ }^\circ\text{C}^2$
-- **Measurement Noise (R)**: Ultrasonic $r_{US} = 2.5\text{ mm}^2$, Pt1000 $r_{Pt1000} = 0.25\text{ }^\circ\text{C}^2$, Pressure-Derived Temp $r_{Antoine} = 1.0\text{ }^\circ\text{C}^2$
-- **Separate Pressure Filter (1D Kalman)**: Process noise $q_P = 0.01\text{ bar}^2$, Measurement noise $r_P = 0.5\text{ bar}^2$
+#### Process Model (Random Walk):
+$$x_k = x_{k-1} + w_k, \quad w_k \sim \mathcal{N}(0, Q)$$
+$$P_{k|k-1} = P_{k-1|k-1} + Q$$
+Where process covariance $Q = \text{diag}(q_h, q_T)$ with $q_h = 0.005\text{ mm}^2$ and $q_T = 0.01\text{ }^\circ\text{C}^2$.
+
+#### Measurement Models & Analytical Jacobian:
+1. **Ultrasonic Level (Linear)**:
+   $$z_h = h + v_h, \quad H_h = \begin{bmatrix} 1 & 0 \end{bmatrix}, \quad r_h = 2.5\text{ mm}^2$$
+2. **Pt1000 Temperature (Linear)**:
+   $$z_T = T + v_T, \quad H_T = \begin{bmatrix} 0 & 1 \end{bmatrix}, \quad r_T = 0.25\text{ }^\circ\text{C}^2$$
+3. **Saturated Vapor Pressure (Non-Linear)**:
+   $$z_P = P_{sat}(T) + v_P, \quad r_P = 0.5\text{ bar}^2$$
+   The expected vapor pressure is evaluated via the Antoine equation at the prior estimated temperature $\hat{T}$:
+   $$\log_{10}(P) = A - \frac{B}{C + T_K} \implies P_{sat}(T_K) = 10^{A - \frac{B}{C + T_K}}$$
+   The non-linear Jacobian row $H_P$ is computed **analytically in $O(1)$** without iterative bisection:
+   $$H_P = \begin{bmatrix} \frac{\partial P_{sat}}{\partial h} & \frac{\partial P_{sat}}{\partial T} \end{bmatrix} = \begin{bmatrix} 0 & J_T \end{bmatrix}$$
+   Where:
+   $$J_T = \frac{dP_{sat}}{dT} = \ln(10) \cdot P_{sat}(T_K) \cdot \frac{B}{(C + T_K)^2}$$
+   Weighted across propane and butane fractions:
+   $$J_{T,mix} = f_{propane} \cdot J_{T,propane} + (1 - f_{propane}) \cdot J_{T,butane}$$
+
+#### Gating & Numerical Stabilization:
+- **Mahalanobis Innovation Gate ($3\sigma$)**: Outlier measurements (leaks, disconnected transducers, abrupt depressurization) are rejected before corrupting the state:
+  $$d^2 = \frac{y_P^2}{S_P} \le 9.0 \quad \left(y_P = z_P - P_{sat}(\hat{T}), \quad S_P = J_T^2 p_{11} + r_P\right)$$
+- **Joseph-Form Covariance Update**: Guarantees positive-definiteness on 32-bit single-precision floating point:
+  $$P_k = (I - K_k H_k) P_{k|k-1} (I - K_k H_k)^T + K_k R_k K_k^T$$
+- **Variance Floor**: $p_{00} \ge 10^{-6}\text{ mm}^2, p_{11} \ge 10^{-6}\text{ }^\circ\text{C}^2$ to prevent zero/negative variance collapse.
 
 ### 2. Acoustic Model (Sound Speed in Vapor)
 The speed of sound $c$ in LPG vapor varies heavily with temperature and gas mixture:
 - **Primary Source (Reflector)**: If a physical reference reflector is mounted at distance $D_{ref}$:
   $$c = \frac{2 \cdot D_{ref}}{t_{ref}} \text{ (m/s)}$$
 - **Fallback Source (Thermodynamics)**: Based on real-gas speed of sound model:
-  $$c = \sqrt{\frac{\gamma \cdot Z \cdot R \cdot T}{M}}$$
+  $$c = \sqrt{\frac{\gamma \cdot Z \cdot R \cdot T_K}{M}}$$
   Where compressibility $Z \approx 0.8$, universal gas constant $R = 8.314\text{ J/(mol}\cdot\text{K)}$, and heat capacity ratio $\gamma$ and molar mass $M$ are calculated by composition weighting via `propaneFraction`.
-- **Distance to Liquid**: $d = \frac{c \cdot t_{flight}}{2 \cdot 1000}\text{ (mm)}$
-- **Calculated Level**: $h = H - d - mountOffset$, clamped to $[0, 2R]$.
+- **Distance to Liquid**: $d = \frac{c \cdot t_{flight}}{2 \cdot 1000}\text{ (mm)}$ (gated to $t_{flight} > 0$).
+- **Calculated Level**: $h = H - d - mountOffset$, clamped to $[0, 2R]$. If tank height $H$ is unconfigured ($\le 0$), it automatically defaults to nominal diameter $2R$.
 
 ### 3. Tilt Correction (Tilted Tank Volume)
 - **Axial Sensor Offset**: If the sensor is mounted off-center by $x_{sensor}$:
   $$h_{center} = h_{measured} - x_{sensor} \cdot \tan(\theta_{pitch})$$
-- **Volume Integration**: Volume is not calculated as a flat segment $A(h) \cdot L$. Instead, it numerical-integrates the segment area along the pitch angle using a 24-node midpoint quadrature:
+- **Volume Integration**: Volume is numerical-integrated along the pitch angle using a 24-node midpoint quadrature:
   $$V_{Liters} = \sum_{i=1}^{24} \frac{A(h(x)) \cdot dx}{10^6}$$
   Where local height $h(x) = \text{clamp}(h_{center} + x \cdot \tan(\theta_{pitch}), 0, 2R)$, and $dx = L / 24$.
+- **Trigonometric Domain Safeguard**:
+  $$\theta = 2 \cdot \arccos\left(\text{clamp}\left(\frac{R - h}{R}, -1.0, 1.0\right)\right)$$
+  Preventing floating-point domain errors ($\text{NaN}$) at empty ($h=0$) or full ($h=2R$) tank states.
 
 ### 4. Thermodynamics, Mass, and Autonomy
 - **Density ($\rho$)**: Linearly interpolated from saturated liquid density tables for Propane and Butane at estimated EKF temperature.
@@ -231,12 +252,12 @@ The speed of sound $c$ in LPG vapor varies heavily with temperature and gas mixt
   $$V_{15} = \frac{m}{\rho(15)}$$
   Where mass $m = \rho(T) \cdot V_{measured}$.
 - **Diagnostics**:
-  - **Health**: Evaluation metrics for sensors:
+  - **Health Scores (0-100)**:
     - Ultrasonic: 0 if invalid; 60 if gas-speed model and reflector disagree.
     - Temperature: 0 if invalid; 50 if outside physical range $[-40, 60]^\circ\text{C}$.
     - Pressure: $100 - |P_{measured} - P_{Antoine}(T)| \cdot 15$, clamped to $[0, 100]$.
-  - **Consumption**: Average consumption rate (L/day) using an EMA ($\alpha = 0.2$) on volume reductions.
-  - **Autonomy**: $\text{Remaining Days} = \frac{V_{measured}}{\text{ConsumptionRate (L/day)}}$.
+  - **Consumption & Autonomy**: Average consumption rate (L/day) with noise rectification filter and automatic refill detection ($>5$ L increases reset baseline without counting as consumption):
+    $$\text{Remaining Days} = \frac{V_{measured}}{\text{ConsumptionRate (L/day)}}$$
 
 ---
 

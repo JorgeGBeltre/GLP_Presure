@@ -26,9 +26,9 @@ namespace glp::domain {
 class SensorFusion {
 public:
     SensorFusion()
-        // EKF [h,T]: qH,qT (proceso); rH (ultrasónico); rT (Pt1000); rTfromP (T desde presión)
-        : ekf_(0.005f, 0.01f, 2.5f, 0.25f, 1.0f),
-          kfPressure_(0.01f, 0.5f)  // filtro de presión: sólo para reporte + inversa de Antoine
+        // EKF [h,T]: qH,qT (proceso); rH (ultrasónico); rT (Pt1000); rP (sensor de presión en bar²)
+        : ekf_(0.005f, 0.01f, 2.5f, 0.25f, 0.5f),
+          kfPressure_(0.01f, 0.5f)  // filtro 1D de presión: para reporte en telemetría
     {}
 
     /**
@@ -41,18 +41,25 @@ public:
                            TiltReading tilt = {}, float sensorAxialMm = 0.0f) {
         VolumeEstimate r;
 
-        // 1. Presión filtrada (para reporte y para la inversa de Antoine).
+        // 1. Presión filtrada (para reporte en telemetría).
         if (s.pressureValid) r.pressureBar = kfPressure_.update(s.pressureRawBar);
         else { kfPressure_.predict(); r.pressureBar = kfPressure_.estimate(); }
 
-        // 2. EKF [h, T] (opción B): nivel del ultrasónico, temperatura del Pt1000 y una
-        //    2ª medición de temperatura por Antoine⁻¹(P). Un canal inválido ⇒ ese estado
-        //    sólo predice (sostiene el valor y crece su σ).
-        const bool  tFromPValid = s.pressureValid && r.pressureBar > 0.5f;
-        const float tFromP = tFromPValid
-            ? LpgThermo::temperatureFromVaporPressure(r.pressureBar, propaneFraction)
-            : 0.0f;
-        ekf_.update(s.levelRawMm, s.levelValid, s.tempRawC, s.tempValid, tFromP, tFromPValid);
+        // 2. Filtro de Kalman Extendido (EKF) conjunto [h, T]:
+        //    - Nivel medido por ultrasónico (lineal en h, H = [1, 0])
+        //    - Temperatura medida por Pt1000 (lineal en T, H = [0, 1])
+        //    - Presión de vapor saturado (NO-LINEAL, z_P = P_sat(T̂), H = [0, dP/dT(T̂)])
+        //    Se calcula P_sat y Jacobiano dP/dT analíticamente en O(1) con la temperatura previa.
+        const float tPrior = ekf_.temp();
+        const float pSat   = LpgThermo::vaporPressureBar(tPrior, propaneFraction);
+        const float dP_dT  = LpgThermo::vaporPressureDerivativeBarPerC(tPrior, propaneFraction);
+        const bool  pValid = s.pressureValid && (s.pressureRawBar > 0.5f) && (s.pressureRawBar < 35.0f);
+
+        ekf_.updateNonlinear(s.levelRawMm, s.levelValid,
+                             s.tempRawC, s.tempValid,
+                             s.pressureRawBar, pValid,
+                             pSat, dP_dT);
+
         r.levelMm             = ekf_.level();
         r.tempCelsius         = ekf_.temp();
         r.kalmanUncertaintyMm = std::sqrt(ekf_.levelVar());

@@ -38,8 +38,8 @@ public:
             e.healthy   = true;               // sin reflector no hay con qué comparar
         }
 
-        e.valid      = us.echoValid;
-        e.distanceMm = us.echoValid ? e.cMs * us.tFlightUs / 2000.0f : 0.0f;
+        e.valid      = us.echoValid && (us.tFlightUs > 0.0f);
+        e.distanceMm = e.valid ? (e.cMs * us.tFlightUs / 2000.0f) : 0.0f;
         return e;
     }
 };
