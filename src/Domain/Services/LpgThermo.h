@@ -49,7 +49,7 @@ public:
      * P↔T para la salud del sensor, NO alimenta la masa.
      */
     static float vaporPressureBar(float tempC, float propaneFraction) {
-        const float tK = tempC + 273.15f;
+        const float tK = std::max(1.0f, tempC + 273.15f);
         const float pP = antoine(tK, 3.98292f, 819.296f, -24.417f);  // propano
         const float pB = antoine(tK, 4.35576f, 1175.581f, -2.071f);  // butano
         const float frac = std::clamp(propaneFraction, 0.0f, 1.0f);
@@ -57,9 +57,21 @@ public:
     }
 
     /**
+     * Derivada analítica dP/dT (bar/°C) de la presión de vapor respecto a la temperatura.
+     * Utilizada por el Jacobiano del Filtro de Kalman Extendido (EKF): H = [0, dP/dT].
+     */
+    static float vaporPressureDerivativeBarPerC(float tempC, float propaneFraction) {
+        const float tK = std::max(1.0f, tempC + 273.15f);
+        const float dP_propane = antoineDerivative(tK, 3.98292f, 819.296f, -24.417f);
+        const float dP_butane  = antoineDerivative(tK, 4.35576f, 1175.581f, -2.071f);
+        const float frac = std::clamp(propaneFraction, 0.0f, 1.0f);
+        return frac * dP_propane + (1.0f - frac) * dP_butane;
+    }
+
+    /**
      * Inversa de vaporPressureBar: temperatura (°C) a partir de la presión de vapor
-     * (bar), por bisección (la curva es monótona creciente). Usada por el EKF para
-     * convertir la presión medida en una 2ª medición de temperatura.
+     * (bar), por bisección (la curva es monótona creciente). Conservada para utilidades
+     * y chequeos fuera del loop principal del EKF.
      */
     static float temperatureFromVaporPressure(float pBar, float propaneFraction) {
         float lo = -40.0f, hi = 60.0f;                 // rango operativo del GLP
@@ -81,13 +93,23 @@ public:
         const float M     = frac * 0.0441f + (1.0f - frac) * 0.0581f;  // kg/mol
         const float Z     = 0.80f;                                     // compresibilidad (saturado)
         const float R     = 8.314f;
-        const float tK    = tempC + 273.15f;
+        const float tK    = std::max(1.0f, tempC + 273.15f);
         return std::sqrt(gamma * Z * R * tK / M);
     }
 
 private:
     static float antoine(float tK, float A, float B, float C) {
-        return std::pow(10.0f, A - B / (C + tK));
+        const float denom = C + tK;
+        if (denom <= 0.0f) return 0.0f;
+        return std::pow(10.0f, A - B / denom);
+    }
+
+    static float antoineDerivative(float tK, float A, float B, float C) {
+        const float denom = C + tK;
+        if (denom <= 0.0f) return 0.0f;
+        const float p = antoine(tK, A, B, C);
+        constexpr float kLn10 = 2.302585092994046f;
+        return kLn10 * p * B / (denom * denom);
     }
 
     /** Interpolación lineal; fuera del rango de la tabla, clamp al extremo. */

@@ -32,6 +32,11 @@ public:
         const float ay = a.acceleration.y;
         const float az = a.acceleration.z;
 
+        const float gMag = std::sqrt(ax * ax + ay * ay + az * az);
+        if (gMag < 3.0f || gMag > 25.0f) {
+            return t; // Aceleración anómala o sensor desconectado: lectura no válida
+        }
+
         t.pitchRad = std::atan2(-ax, std::sqrt(ay * ay + az * az));
         t.rollRad  = std::atan2(ay, az);
         t.valid    = true;
