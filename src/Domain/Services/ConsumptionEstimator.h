@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 namespace glp::domain {
 
 /**
@@ -11,18 +13,40 @@ class ConsumptionEstimator {
 public:
     /** Nueva medición de volumen (L) con el tiempo actual (ms, de IClock). */
     void update(float volumeLiters, unsigned long nowMs) {
-        if (!seeded_) { seeded_ = true; lastV_ = volumeLiters; lastMs_ = nowMs; return; }
+        if (!seeded_) {
+            seeded_ = true;
+            lastV_  = volumeLiters;
+            lastMs_ = nowMs;
+            return;
+        }
         const unsigned long dtMs = nowMs - lastMs_;
         if (dtMs == 0) return;
 
+        const float dV = lastV_ - volumeLiters; // positivo = consumo
+
+        // Detección de recarga significativa (aumento de volumen > 5 L):
+        if (dV < -5.0f) {
+            lastV_  = volumeLiters;
+            lastMs_ = nowMs;
+            return;
+        }
+
+        // Rechazo de rectificación de ruido en intervalos muy cortos (<60s) con dV diminuto:
+        if (dtMs < 60000UL && std::fabs(dV) < 0.2f) {
+            return;
+        }
+
         const float dtDays = static_cast<float>(dtMs) / 86400000.0f; // ms → días
-        const float rate   = (lastV_ - volumeLiters) / dtDays;       // L/día (positivo = consumo)
+        const float rate   = dV / dtDays;                            // L/día (positivo = consumo)
         if (rate > 0.0f) {
             ratePerDay_ = uninit_ ? rate : (kAlpha * rate + (1.0f - kAlpha) * ratePerDay_);
-            uninit_ = false;
+            uninit_     = false;
+            lastV_      = volumeLiters;
+            lastMs_     = nowMs;
+        } else if (dV < 0.0f) {
+            // Ruido positivo menor: actualizar solo timestamp para evitar sesgo alcista acumulado
+            lastMs_ = nowMs;
         }
-        lastV_  = volumeLiters;
-        lastMs_ = nowMs;
     }
 
     float litersPerDay() const { return uninit_ ? 0.0f : ratePerDay_; }
