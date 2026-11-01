@@ -5,7 +5,7 @@
 namespace glp::infra {
 
 std::string ArduinoJsonPayloadSerializer::telemetry(const app::TelemetrySnapshot& s) {
-    DynamicJsonDocument doc(2560);
+    DynamicJsonDocument doc(3072);
 
     // ── Cabecera común "Device" ──────────────────────────────────
     JsonObject dev = doc.createNestedObject("Device");
@@ -50,9 +50,12 @@ std::string ArduinoJsonPayloadSerializer::telemetry(const app::TelemetrySnapshot
     tank["length_cm"] = s.tank.lengthMm / 10.0f;
 
     JsonObject gps = d.createNestedObject("gps");
-    gps["lat"]   = s.gps.latitude;
-    gps["lng"]   = s.gps.longitude;
-    gps["valid"] = s.gps.valid;
+    gps["lat"]            = s.gps.latitude;
+    gps["lng"]            = s.gps.longitude;
+    gps["valid"]          = s.gps.valid;
+    gps["drift_filtered"] = s.gps.driftFiltered;
+    gps["displacement_m"] = s.gps.displacementM;
+    gps["tamper_moved"]   = s.gps.tamperMoved;
 
     d["rssi"]      = s.metrics.rssi;
     d["free_heap"] = s.metrics.freeHeap;
@@ -76,6 +79,16 @@ std::string ArduinoJsonPayloadSerializer::telemetry(const app::TelemetrySnapshot
     acoustic["c_used_ms"] = s.raw.soundSpeedMs;
     acoustic["source"]    = s.raw.reflectorUsed ? "reflector" : "gas_model";
     acoustic["healthy"]   = s.raw.acousticHealthy;
+
+    JsonObject security = d.createNestedObject("security_guard");
+    security["tamper_moved"]     = s.gps.tamperMoved;
+    security["displacement_m"]   = s.gps.displacementM;
+    security["seismic_impact"]   = s.tilt.seismicImpactDetected;
+    security["accel_g"]          = s.tilt.accelMagnitudeG;
+    security["cellular_jamming"] = s.cellularJamming;
+    if (!s.resolvedApn.empty()) {
+        security["resolved_apn"] = s.resolvedApn;
+    }
 
     String out;
     serializeJson(doc, out);

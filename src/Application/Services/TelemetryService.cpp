@@ -2,6 +2,7 @@
 
 #include "Application/Dto/TelemetrySnapshot.h"
 #include "Domain/Services/SensorHealth.h"
+#include "Infrastructure/Net/sim_module.h"
 
 namespace glp::app {
 
@@ -45,17 +46,20 @@ bool TelemetryService::publishTelemetry() {
     snap.ctx.connectionType   = conn_.activeTypeString();
     snap.ctx.ipAddress        = conn_.activeIp();
     snap.ctx.timestamp        = time_.isoTimestamp();
-    // --- Details (medición GLP) ---
+    // --- Details (medición GLP + Seguridad del Activo) ---
     snap.raw      = raw;
     snap.estimate = est;
     snap.tank     = tank;
     snap.gps      = fix;
+    snap.tilt     = tilt;
     snap.metrics  = device_.metrics();
     snap.metrics.rssi = conn_.activeRssi();   // rssi del enlace activo
     snap.health           = domain::SensorHealth::evaluate(est, raw, frac);
     snap.consumptionLpd   = consumption_.litersPerDay();
     snap.remainingDays    = consumption_.remainingDays(est.volumeLiters);
     snap.vaporPressureBar = domain::LpgThermo::vaporPressureBar(est.tempCelsius, frac);
+    snap.cellularJamming  = isSimJammingDetected();
+    snap.resolvedApn      = getSimResolvedApn();
 
     return conn_.transport().publish(topics_.telemetry, serializer_.telemetry(snap));
 }

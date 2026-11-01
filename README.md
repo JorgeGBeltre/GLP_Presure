@@ -66,6 +66,8 @@ Firmware for **remote measurement of Liquefied Petroleum Gas (LPG)** in horizont
 | **Complete GATT Callbacks & Unified JSON Frame** | Full read/write support across individual GATT characteristics (`port`, `tank_radius_cm`, `tank_length_cm`, `device_key`, `bind_token`) and unified JSON / `Key=Value` frames (`0x0014`) |
 | **Local LAN HTTP Server (`:8081`) + mDNS** | Local endpoints `/zeroconf/info`, `/zeroconf/signal_strength`, `/zeroconf/sled`, `/zeroconf/wifi`, `/zeroconf/config`, and `/zeroconf/ota_unlock` with `AES-128-CBC` (`MD5(deviceKey)`) support |
 | **Non-Blocking LED Indicator (`100 ms`)** | Multi-pattern state machine (`QuickPairing`, `CompatibleAp`, `Connecting`, `Operational` with `sledOnline`, `Anomaly`, `Error`) |
+| **Stationary Tank Drift Filter & Tamper Guard (`GTRDF` / `GTTOW` / `GTGEO`)** | Pins stationary LPG tank GPS coordinates within `30 m` (`GTRDF`) and flags unauthorized tank relocation (`tamper_moved`, `>= 50 m` displacement) |
+| **Seismic / Mechanical Shock & Cellular Jamming Guard (`GTCRA` / `GTJDC`)** | Detects mechanical impacts or seismic shocks (`|g - 1.0| >= 1.2g`) on the MPU6050 (`Mpu6050TiltProvider`), auto-resolves SIM7600 carrier APN from MCC/MNC (`apn.bin` table), and reports cellular RF jamming (`cellular_jamming`) in `security_guard` |
 | **Native MQTT 5.0 + Secure OTA** | Periodic telemetry, status envelopes, remote configuration updates, and `HMAC-SHA256` verified OTA updates |
 
 ---
@@ -105,6 +107,10 @@ Firmware for **remote measurement of Liquefied Petroleum Gas (LPG)** in horizont
   - `runPairingWorkflow()` in [`main.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Presentation/main.cpp).
 - Local LAN Zeroconf Server ([`LanZeroconfServer.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Net/LanZeroconfServer.h), [`LanZeroconfServer.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Net/LanZeroconfServer.cpp)):
   - `loop()`, `notifyMdnsStateChange()`, `startServer()`, `stopServer()`, `registerEndpoint()`, `dispatchZeroconf()`.
+- Stationary Tank Security & Cellular Intelligence ([`TinyGpsProvider.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Gps/TinyGpsProvider.h), [`Mpu6050TiltProvider.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Sensors/Mpu6050TiltProvider.h), [`sim_module.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Net/sim_module.cpp)):
+  - `TinyGpsProvider::location()` with Haversine static drift pinning (`GTRDF`, `<= 30 m`) and unauthorized tank relocation tamper alarm (`GTTOW` / `GTGEO`, `>= 50 m`).
+  - `Mpu6050TiltProvider::read()` with 3-axis acceleration magnitude (`accelMagnitudeG`) and seismic/mechanical shock detection (`GTCRA`, `seismicImpactDetected`).
+  - `autoResolveApnFromImsi()`, `isSimJammingDetected()`, and `getSimResolvedApn()` in `sim_module.cpp`.
 
 ---
 
