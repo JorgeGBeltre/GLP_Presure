@@ -155,10 +155,11 @@ When the Wi-Fi link is active, [`LanZeroconfServer`](file:///c:/Users/Jorge/Musi
 
 | HTTP `POST :8081` Endpoint | Description |
 |---|---|
-| `/zeroconf/info` | Returns `deviceid`, `sledOnline`, tank dimensions (`tankRadiusCm`, `tankLengthCm`), and Wi-Fi `rssi` |
+| `/zeroconf/info` | Returns `deviceid`, `sledOnline`, cellular `apn`, tank geometry (`tankRadiusCm`, `tankLengthCm`, `tankHeightCm`, `propaneFraction`), and Wi-Fi `rssi` |
 | `/zeroconf/signal_strength` | Returns Wi-Fi signal strength (`signalStrength` in dBm) |
 | `/zeroconf/sled` | Enables or disables the online status LED (`{"sledOnline":"on"\|"off"}`) |
-| `/zeroconf/wifi` | Updates Wi-Fi credentials in NVS |
+| `/zeroconf/wifi` | Updates Wi-Fi credentials, cellular `apn` (`apn`, `apn_user`, `apn_pass`), and MQTT 5.0 broker in NVS |
+| `/zeroconf/config` | Updates cellular `apn`, MQTT 5.0 broker, and LPG tank geometry (`tank_radius_cm`, `tank_length_cm`, `tank_height_cm`, `propane_fraction`) in NVS |
 | `/zeroconf/ota_unlock` | Unlocks local OTA updates |
 
 ---

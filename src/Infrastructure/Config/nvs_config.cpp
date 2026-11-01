@@ -112,7 +112,7 @@ void saveConfig() {
     preferences.putFloat ("ref_dist",    config.ref_distance_cm);
     preferences.putString("ota_hmac",    config.ota_hmac_key);
     preferences.putBool  ("sled_on",     config.sled_online);
-    preferences.putBool  ("provisioned", true);
+    preferences.putBool  ("provisioned", config.wifi_ssid.length() > 0 || config.apn.length() > 0);
     preferences.end();
 }
 
