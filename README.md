@@ -1,535 +1,176 @@
-# LPG IoT Measurement System — ESP32-S3
+# GLP_Presure — Clean Architecture LPG Telemetry Firmware (ESP32-S3)
+
+**Stationary LPG Tank Level, Pressure, and Temperature Telemetry with Dual Redundant Connectivity (Wi-Fi + LTE SIM7600), Native MQTT 5.0 over TLS, Quick Pairing (BLE GATT + SmartConfig), Local LAN HTTP Diagnostics, and Secure OTA Updates**
 
 [![Platform](https://img.shields.io/badge/platform-ESP32--S3-blue)](https://www.espressif.com/en/products/socs/esp32-s3)
-[![Framework](https://img.shields.io/badge/framework-Arduino-teal)](https://github.com/espressif/arduino-esp32)
-[![MQTT 5.0](https://img.shields.io/badge/MQTT-5.0-orange)](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html)
-[![Build](https://img.shields.io/badge/PlatformIO-build%20passing-brightgreen)](#installation--build)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-green)](https://en.cppreference.com/w/cpp/17)
+[![MQTT 5.0](https://img.shields.io/badge/MQTT-5.0-orange)](https://mqtt.org)
+[![BLE](https://img.shields.io/badge/Bluetooth-BLE%20GATT-blueviolet)](https://github.com/h2zero/NimBLE-Arduino)
+[![Architecture](https://img.shields.io/badge/Architecture-Clean%20Architecture-purple)](#system-architecture-clean-architecture)
+[![PlatformIO](https://img.shields.io/badge/PlatformIO-Compatible-teal)](https://platformio.org)
+[![CMake](https://img.shields.io/badge/CMake-Supported-red)](https://cmake.org)
 
 ---
 
-Firmware for **remote measurement of Liquefied Petroleum Gas (LPG)** in horizontal cylindrical tanks. It estimates the liquid level with an ultrasonic sensor, cross-checks it against pressure and temperature using a joint **2D Extended Kalman Filter (EKF)**, calculates the temperature-compensated volume, mass, and billing-standard gallons (liters corrected to 15 °C), and publishes telemetry over **MQTT 5.0** across **WiFi or 4G cellular (SIM7600)**. It includes **secure OTA with HMAC-SHA256 verification**, **GPS geolocation**, and multi-transport **field provisioning (BLE, WiFi captive portal, and SmartConfig)**. Built on a four-layer **Clean Architecture** (C++17), decoupling business logic from hardware, making it unit-testable on host PCs.
-
 ## Table of Contents
 
+- [Overview](#overview)
 - [Key Features](#key-features)
-- [Hardware](#hardware)
-- [Architecture](#architecture)
-- [How the Firmware Boots](#how-the-firmware-boots)
-- [Step 1 — Provisioning](#step-1--provisioning)
-- [Step 2 — Dual Connectivity (WiFi + Cellular)](#step-2--dual-connectivity-wifi--cellular)
-- [Step 3 — Measurement (Sensors → EKF → Volume)](#step-3--measurement-sensors--ekf--volume)
-- [Step 4 — MQTT 5.0 Telemetry](#step-4--mqtt-50-telemetry)
-- [Step 5 — Remote Configuration](#step-5--remote-configuration)
-- [Step 6 — OTA Updates](#step-6--ota-updates)
-- [MQTT Topics](#mqtt-topics)
-- [Persistence (NVS)](#persistence-nvs)
-- [LED Indicators](#led-indicators)
-- [Installation & Build](#installation--build)
-- [Project Structure](#project-structure)
-- [License](#license)
-- [Contact](#contact)
-- [Support](#support)
+- [Added Functions & Modules](#added-functions--modules)
+- [System Architecture (Clean Architecture)](#system-architecture-clean-architecture)
+- [GPIO Pinout (ESP32-S3)](#gpio-pinout-esp32-s3)
+- [2-Stage Pairing Workflow (Quick Pairing + SoftAP)](#2-stage-pairing-workflow-quick-pairing--softap)
+- [Local LAN HTTP Diagnostics (`/zeroconf/*`) & mDNS](#local-lan-http-diagnostics-zeroconf--mdns)
+- [Build & Host Unit Testing](#build--host-unit-testing)
+
+---
+
+## Overview
+
+**GLP_Presure** is an industrial telemetry firmware for stationary Liquefied Petroleum Gas (**LPG**) tanks, engineered in **Clean Architecture** on the **ESP32-S3** (`esp32-s3-devkitc-1`). It combines pure thermodynamic, acoustic, and geometric domain models (`Domain/Services/`), redundant **Wi-Fi + 4G LTE (SIM7600)** connectivity with **MQTT 5.0 (`ESP32_MQTTv5` + `MQTTOTAv5`)**, a 2-stage pairing workflow (**Quick Pairing BLE GATT `GLP-<DeviceID>` + SmartConfig** and **SoftAP `GLP-CONFIG-<DeviceID>`**), and a local **HTTP Zeroconf Server (`:8081`)** with `AES-128-CBC` encryption.
 
 ---
 
 ## Key Features
 
-### Measurement & Fusion
-- **Joint 2D Extended Kalman Filter (EKF)**: Fuses level measurements with a joint state vector $x = [h, T]^T$ (liquid level in mm, temperature in °C). Pressure enters the filter via a genuine non-linear measurement model $h_P(x) = P_{sat}(T)$ with an analytical Jacobian $H_P = [0, \frac{dP_{sat}}{dT}(\hat{T})]$ derived directly from NIST Antoine equations. Includes a $3\sigma$ Mahalanobis gating threshold ($y^2 / S \le 9.0$) to reject outliers, leaks, and transducer faults. Covariances are updated in numerically stabilized Joseph form to maintain positive-definiteness on 32-bit floating point.
-- **LPG Thermodynamics (GPA/NIST)**: Saturated liquid density is dynamically calculated via linear interpolation of Propane and Butane density tables based on a remote-configurable propane fraction (`propaneFraction` $\in [0.0, 1.0]$).
-- **Billing Correction (VCF)**: Computes physical volume, total mass ($m = \rho(T) \cdot V$), and a standardized volume corrected to 15 °C (`liters_15c`) for billing accuracy.
-- **Acoustic Model**: Speed of sound is estimated in the LPG *vapor* (not air) taking real-gas compressibility ($Z \approx 0.8$) and composition into account. Supports a physical reference reflector for automatic speed-of-sound calibration and drift correction.
-- **Tilt Compensation**: Corrects ultrasonic level for tank pitch (axial sensor position offset de-bias) and integrates volume across the inclined cylinder segment via 24-point numerical quadrature with domain-safe trigonometric clamping.
-- **Health Diagnostics**: Computes per-sensor health scores (0-100), detects pressure/temperature consistency anomalies against the Antoine vapor pressure curve, and flags physical device anomalies.
-- **Autonomy Prediction**: Estimates consumption rate (L/day) using an Exponential Moving Average (EMA, $\alpha=0.2$) on volume reductions with noise rectification rejection and robust refill detection, and computes remaining operational days.
-
-### Connectivity
-- **Dual Uplink**: Smart dual connectivity with WiFi as the preferred link and automatic fallback to 4G/LTE cellular (SIM7600).
-- **MQTT 5.0**: Native session handling, keep-alive, User Properties, and LWT (Last Will and Testament) offline announcements.
-- **GPS Integration**: Provides latitude, longitude, and satellite validity for geolocation.
-
-### Field Operation
-- **Provisioning without Reflashing**: Interactive BLE GATT configuration, local captive portal over SoftAP, and ESP-Touch SmartConfig.
-- **Secure OTA**: Firmware chunks pushed over MQTT with HMAC-SHA256 signature verification and partition verification.
-- **NVS Configuration Map**: Stores calibration, connection, and geometry configurations using a 15-character namespace safety limit.
+| Feature | Description |
+|---|---|
+| **Clean Architecture** | 4 decoupled layers (`Domain`, `Application`, `Infrastructure`, `Presentation`) with `Domain` + `Application` 100% compilable and testable on the host |
+| **Pure LPG Physics & Thermodynamics** | Horizontal cylinder volume with hemispherical caps, saturated vapor pressure correlation, tilt compensation, and acoustic time-of-flight speed-of-sound estimation |
+| **Quick Pairing (BLE + SmartConfig)** | Simultaneous **BLE GATT (`GLP-<DeviceID>`)** and **Wi-Fi SmartConfig (`ESP-Touch / AirKiss`)** triggered immediately upon holding the button for `5.0 s` |
+| **SoftAP Portal (`GLP-CONFIG-<DeviceID>`)** | Stage 2 provisioning portal triggered by a 2nd `5.0 s` long press, supporting short-press cancellation |
+| **Complete GATT Callbacks & Unified JSON Frame** | Full read/write support across individual GATT characteristics (`port`, `tank_radius_cm`, `tank_length_cm`, `device_key`, `bind_token`) and unified JSON / `Key=Value` frames (`0x0014`) |
+| **Local LAN HTTP Server (`:8081`) + mDNS** | Local endpoints `/zeroconf/info`, `/zeroconf/signal_strength`, `/zeroconf/sled`, `/zeroconf/wifi`, and `/zeroconf/ota_unlock` with `AES-128-CBC` (`MD5(deviceKey)`) support |
+| **Non-Blocking LED Indicator (`100 ms`)** | Multi-pattern state machine (`QuickPairing`, `CompatibleAp`, `Connecting`, `Operational` with `sledOnline`, `Anomaly`, `Error`) |
+| **Native MQTT 5.0 + Secure OTA** | Periodic telemetry, status envelopes, remote configuration updates, and `HMAC-SHA256` verified OTA updates |
 
 ---
 
-## Hardware
+## Added Functions & Modules
 
-**Board:** ESP32-S3-WROOM-1-**N16R8** — 16 MB flash, 8 MB octal PSRAM, 3.3 V logic.
+### 1. Domain Layer (`src/Domain/`)
+- `DeviceConfig` ([`DeviceConfig.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Domain/Entities/DeviceConfig.h)): Added `deviceKey`, `bindToken`, and `sledOnline` attributes.
+- `IndicatorStatus`, `IIndicator::update()`, `IIndicator::setSledOnline()`, `IIndicator::isSledOnline()` ([`IIndicator.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Domain/Interfaces/IIndicator.h)): Added states `Provisioning`, `QuickPairing`, `CompatibleAp`, `Connecting`, `Operational`, `OtaProgress`, `Anomaly`, and `Error`.
+- `ButtonEvent`, `IButtonHandler` ([`IButtonHandler.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Domain/Interfaces/IButtonHandler.h)): Pure interface for physical button handling (`None`, `ShortPress`, `LongPress`).
+- `IConfigRepository::saveSledOnline()` ([`IConfigRepository.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Domain/Interfaces/IConfigRepository.h)).
 
-Physical pins are mapped in a centralized location:
-[BoardConfig.h](src/Infrastructure/Config/BoardConfig.h).
+### 2. Application Layer (`src/Application/`)
+- `CryptoUtils` ([`CryptoUtils.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Application/Services/CryptoUtils.h), [`CryptoUtils.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Application/Services/CryptoUtils.cpp)):
+  - `computeMd5()`
+  - `deriveLanKey()`
+  - `aes128CbcEncryptPkcs7()`
+  - `aes128CbcDecryptPkcs7()`
+  - `base64Encode()`
+  - `base64Decode()`
+  - `decryptZeroconfPayload()`
+  - `encryptZeroconfPayload()`
 
-| Component | Model | Interface | Pins (S3) | Details / Configuration |
-|---|---|---|---|---|
-| **MCU Board** | ESP32-S3 DevKitC-1 | - | - | 16 MB Flash, 8 MB Octal PSRAM |
-| **4G/LTE module** | SIM7600 | UART1 | RX=17, TX=18, PWR=4 | Cell link |
-| **GPS** | generic NMEA | UART2 | RX=16, TX=15 | Geolocation |
-| **Ultrasonic** | HC-SR04 / JSN-SR04T | Digital | TRIG=5, ECHO=6 | Level sensor time of flight |
-| **External ADC** | ADS1115 (16-bit) | I2C (0x48) | SDA=S3 Def, SCL=S3 Def | High precision analog converter |
-| **Pressure Sensor** | Analog 0.5V-4.5V | ADC (ADS1115) | Channel A0 | Digitalized over external ADC |
-| **Temperature Sensor**| Pt1000 RTD | ADC (ADS1115) | Channel A1 | Divisor with reference resistor |
-| **Status LED** | Onboard WS2812 / GPIO | Digital | GPIO 48 | RGB / Status signaling |
-| **Boot Button** | BOOT button | Digital | GPIO 0 (pull-up) | Forced provisioning trigger |
-
-> [!WARNING]
-> The ESP32-S3 operates on 3.3 V. 5 V signals from sensors (e.g., JSN-SR04T ECHO or 5 V analog pressure sensor outputs) MUST pass through a voltage divider or level shifter before reaching the ESP32-S3 pins or the ADC inputs.
-
----
-
-## Architecture
-
-Built on a four-layer **Clean Architecture**, enforcing the dependency rule where dependencies point strictly inward:
-
-```text
-Presentation ──► Application ──► Domain ◄── Infrastructure
-        └───────────────► Infrastructure ──────────┘
-```
-
-| Layer | Responsibility | Directory | Dependencies |
-|---|---|---|---|
-| **Domain** | Entities, interfaces, EKF, sensor fusion, thermodynamics, and acoustic models. Pure C++17, no framework code. | [Domain](src/Domain) | None |
-| **Application** | Services (Config, Connectivity, Telemetry), DTOs, and the system state controller. Decoupled orchestration. | [Application](src/Application) | Domain |
-| **Infrastructure** | Concrete implementations (WiFi, Cellular, MQTT, NVS, ADS1115 ADC, GPS, Ble/SoftAP provisioning, OTA). | [Infrastructure](src/Infrastructure) | Domain |
-| **Presentation** | Setup and main loop execution. Serves as the composition root using manual dependency injection. | [Presentation](src/Presentation) | Domain, Application, Infrastructure |
-
-> Namespaces: `glp::domain`, `glp::app`, `glp::infra`, `glp::board`.
+### 3. Infrastructure & Presentation Layers (`src/Infrastructure/`, `src/Presentation/`)
+- `GpioButton` ([`GpioButton.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Button/GpioButton.h), [`GpioButton.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Button/GpioButton.cpp)):
+  - `onButtonFallingEdgeIsr()`, `init()`, `update()`, `isPhysicallyPressed()` (`25 ms` sample tick, `50 ms` debounce filter, and immediate `LongPress` emission at `5,000 ms`).
+- `GpioIndicator` ([`GpioIndicator.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Indicator/GpioIndicator.h)):
+  - `setSledOnline()`, `isSledOnline()`, `show()`, `update()`.
+- NVS Persistence ([`nvs_config.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Config/nvs_config.h), [`nvs_config.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Config/nvs_config.cpp), [`NvsConfigRepository.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Config/NvsConfigRepository.h)):
+  - `getDefaultChipId()`, `getDefaultDeviceKey()`, `saveSledOnlineNvs()`.
+- Quick Pairing & SoftAP Provisioning ([`ble_provisioning.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Provisioning/ble_provisioning.h), [`ble_provisioning.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Provisioning/ble_provisioning.cpp), [`wifi_ap_provisioning.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Provisioning/wifi_ap_provisioning.h), [`wifi_ap_provisioning.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Provisioning/wifi_ap_provisioning.cpp), [`ProvisioningPortals.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Provisioning/ProvisioningPortals.h)):
+  - `parseJsonCredentials()`, `parseKeyValueFrame()`, `parseFrame()`
+  - `PortWriteCallback`, `FloatWriteCallback`, `DevKeyCallback`, `BindTokenCallback`, `FrameCallback`, `SaveCallback`
+  - `runQuickPairing()`
+  - `BleProvisioningPortal::runInteractive()`
+  - `WifiApProvisioningPortal::runInteractive()`
+  - `runPairingWorkflow()` in [`main.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Presentation/main.cpp).
+- Local LAN Zeroconf Server ([`LanZeroconfServer.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Net/LanZeroconfServer.h), [`LanZeroconfServer.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Net/LanZeroconfServer.cpp)):
+  - `loop()`, `notifyMdnsStateChange()`, `startServer()`, `stopServer()`, `registerEndpoint()`, `dispatchZeroconf()`.
 
 ---
 
-## How the Firmware Boots
+## System Architecture (Clean Architecture)
 
-`Presentation/main.cpp` instantiates all infrastructure elements, injects them into application services, and passes control to `FirmwareController`:
+```mermaid
+flowchart TD
+    subgraph Presentation["Presentation (Composition Root)"]
+        MAIN["src/Presentation/main.cpp"]
+    end
 
-```cpp
-void setup() {
-    // 1. Initialize peripherals (NVS, raw sensors, GPS)
-    // 2. Load persistent configurations from NVS
-    // 3. Build dependency graph (DI) and instantiate application services
-    // 4. Decide initial state:
-    controller.setup(shouldForceProvisioning()); // Holding BOOT pin >5s forces provisioning
-}
+    subgraph Application["Application (Use Cases)"]
+        FCTRL["FirmwareController"]
+        CFGS["ConfigService"]
+        CONNS["ConnectivityService"]
+        TELS["TelemetryService"]
+        CRYP["CryptoUtils"]
+    end
 
-void loop() {
-    controller.tick(); // Runs one iteration of the active state machine
-}
-```
+    subgraph Domain["Domain (Entities + Interfaces + LPG Physics)"]
+        MATH["TankGeometry / LpgThermo / AcousticModel / SensorFusion / StateEkf"]
+        ENT["DeviceConfig / SensorSample / SensorCalibration / VolumeEstimate"]
+        INT["IConfigRepository / IIndicator / IButtonHandler / ITelemetryTransport"]
+    end
 
-The state machine lifecycle:
+    subgraph Infrastructure["Infrastructure (ESP32-S3 Adapters)"]
+        SENS["Esp32RawSensorReader / Mpu6050TiltProvider / TinyGpsProvider"]
+        NET["CellularLink / WifiLink / Mqttv5Transport / LanZeroconfServer"]
+        PROV["ble_provisioning (Quick Pairing) / wifi_ap_provisioning"]
+        UI["GpioButton / GpioIndicator / NvsConfigRepository"]
+    end
 
-```text
-[First boot / BOOT >5s held]
-        │
-        ▼
-   PROVISIONING ──(config saved)──► reboot
-        │  LED: Fast blink
-        ▼
-   CONNECTING ──(link + MQTT OK)──► OPERATIONAL
-        │  LED: Slow blink            │  LED: Solid
-        └──────────────◄─(link lost)──┘
+    MAIN --> FCTRL
+    MAIN --> Infrastructure
+    FCTRL --> CFGS
+    FCTRL --> CONNS
+    FCTRL --> TELS
+    Application --> Domain
+    Infrastructure -- "Implements" --> Domain
 ```
 
 ---
 
-## Step 1 — Provisioning
+## GPIO Pinout (ESP32-S3)
 
-On first boot (unprovisioned flag in NVS) or if the **BOOT button** is held for **> 5 seconds** at startup, the device enters the `PROVISIONING` state. It runs three provisioning portals **sequentially** with timeouts until valid configuration data is saved:
-
-```text
-PROVISIONING
- ├─ 1) BLE Portal (30s)        NimBLE Service. Advertises as "GLP-<device_id>"
- ├─ 2) SoftAP Portal (5 min)   Access Point "GLP-CONFIG-<device_id>", Gateway 192.168.4.1
- └─ 3) SmartConfig (2 min)     Native ESP-Touch v1 (WiFi credentials only)
-        │
-        └─ config received → NVS write → auto-reboot
-```
-
-### BLE GATT Specification
-The BLE provisioning portal starts a GATT Server with the Service UUID: `12345678-1234-1234-1234-123456789abc`. 
-Clients can write configurations to the following characteristic UUIDs:
-
-| Characteristic UUID | Parameter | Type / Description |
+| Peripheral | Pin (`BoardConfig.h`) | Notes |
 |---|---|---|
-| `aaaaaaaa-bbbb-cccc-dddd-000000000001` | `apn` | Cellular APN string |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000002` | `apn_user` | Cellular APN username |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000003` | `apn_pass` | Cellular APN password |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000004` | `mqtt_broker` | MQTT broker host string |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000005` | `mqtt_port` | MQTT port (sent as string) |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000006` | `mqtt_user` | MQTT username |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000007` | `mqtt_pass` | MQTT password |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000008` | `device_id` | Unique device identifier |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000009` | `tank_radius_cm`| Tank inner radius (cm) |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000010` | `tank_length_cm`| Tank inner length (cm) |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000011` | `ota_hmac_key` | HMAC security key |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000012` | `wifi_ssid` | WiFi SSID string |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000013` | `wifi_pass` | WiFi password string |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000099` | `save` | Write "SAVE" or any value to persist config & reboot |
+| **Status LED** (`LED_PIN`) | `GPIO 48` | Non-blocking pattern generator (`100 ms` base tick) |
+| **BOOT / Pairing Button** (`BOOT_BTN_PIN`) | `GPIO 0` | `INPUT_PULLUP` (`25 ms` sample, `50 ms` debounce, `5,000 ms` `LongPress`) |
+| **SIM7600 RX / TX / PWR** | `GPIO 17 / 18 / 4` | UART1 (`115200` baud) |
+| **GPS NMEA RX / TX** | `GPIO 16 / 15` | UART2 (`9600` baud) |
+| **Ultrasonic TRIG / ECHO** | `GPIO 5 / 6` | Bottom-up acoustic TOF measurement |
+| **Pressure / Temperature** | `GPIO 1 / 2` | `ADC1_CH0` / `ADC1_CH1` (or external ADS1115 I2C) |
 
 ---
 
-## Step 2 — Dual Connectivity (WiFi + Cellular)
+## 2-Stage Pairing Workflow (Quick Pairing + SoftAP)
 
-`ConnectivityService` manages network link lifecycle and socket routing:
-
-- **Priority Uplink (WiFi)**: If `wifi_ssid` is configured, it attempts WiFi connection (`WifiLink`).
-- **Backup Uplink (4G SIM7600)**: If WiFi fails or is not configured, it initializes `CellularLink` via TinyGSM.
-- **Bridge Socket**: `NetworkClient::getActiveNetworkClient()` binds the MQTT socket to either the native `WiFiClient` or `TinyGsmClientBridge`.
-- **Time Synchronization**: On connection, registers with NTPServer to fetch UTC time for telemetric timestamping.
-
----
-
-## Step 3 — Measurement (Sensors → EKF → Volume)
-
-The measurement pipeline runs every **30 seconds**:
-
-```text
-Raw Inputs                     Signal Processing                     Outputs & States
-─────────────────              ─────────────────                     ─────────────────
-Ultrasonic tFlight ──► [Acoustic Model] ──► Level d ─────────────────┐
-Pt1000 Temp V ───────► [Calibration]   ──► Temp Pt1000 ──────────────┼──► [State EKF (2D)]
-Pressure V ──────────► [Calibration]   ──► Pressure P_meas (bar) ────┘    ├─ Level h_est ──► [Tilt & Volume] ──► volume, gallons, %
-                                                                          └─ Temp t_est  ──► [LpgThermo] ──────► density, mass, liters_15c
-
-* Note: Pressure also passes through a separate 1D Kalman filter solely for telemetry reporting smoothing.
-```
-
-### 1. Extended Kalman Filter (EKF) Formulation
-Fuses ultrasonic liquid distance, Pt1000 RTD resistance, and vapor pressure using a joint 2D state vector $x = [h, T]^T$ (liquid level in mm, temperature in °C).
-
-#### Process Model (Random Walk):
-$$x_k = x_{k-1} + w_k, \quad w_k \sim \mathcal{N}(0, Q)$$
-$$P_{k|k-1} = P_{k-1|k-1} + Q$$
-Where process covariance $Q = \text{diag}(q_h, q_T)$ with $q_h = 0.005\text{ mm}^2$ and $q_T = 0.01\text{ }^\circ\text{C}^2$.
-
-#### Measurement Models & Analytical Jacobian:
-1. **Ultrasonic Level (Linear)**:
-   $$z_h = h + v_h, \quad H_h = \begin{bmatrix} 1 & 0 \end{bmatrix}, \quad r_h = 2.5\text{ mm}^2$$
-2. **Pt1000 Temperature (Linear)**:
-   $$z_T = T + v_T, \quad H_T = \begin{bmatrix} 0 & 1 \end{bmatrix}, \quad r_T = 0.25\text{ }^\circ\text{C}^2$$
-3. **Saturated Vapor Pressure (Non-Linear)**:
-   $$z_P = P_{sat}(T) + v_P, \quad r_P = 0.5\text{ bar}^2$$
-   The expected vapor pressure is evaluated via the Antoine equation at the prior estimated temperature $\hat{T}$:
-   $$\log_{10}(P) = A - \frac{B}{C + T_K} \implies P_{sat}(T_K) = 10^{A - \frac{B}{C + T_K}}$$
-   The non-linear Jacobian row $H_P$ is computed **analytically in $O(1)$** without iterative bisection:
-   $$H_P = \begin{bmatrix} \frac{\partial P_{sat}}{\partial h} & \frac{\partial P_{sat}}{\partial T} \end{bmatrix} = \begin{bmatrix} 0 & J_T \end{bmatrix}$$
-   Where:
-   $$J_T = \frac{dP_{sat}}{dT} = \ln(10) \cdot P_{sat}(T_K) \cdot \frac{B}{(C + T_K)^2}$$
-   Weighted across propane and butane fractions:
-   $$J_{T,mix} = f_{propane} \cdot J_{T,propane} + (1 - f_{propane}) \cdot J_{T,butane}$$
-
-#### Gating & Numerical Stabilization:
-- **Mahalanobis Innovation Gate ($3\sigma$)**: Outlier measurements (leaks, disconnected transducers, abrupt depressurization) are rejected before corrupting the state:
-  $$d^2 = \frac{y_P^2}{S_P} \le 9.0 \quad \left(y_P = z_P - P_{sat}(\hat{T}), \quad S_P = J_T^2 p_{11} + r_P\right)$$
-- **Joseph-Form Covariance Update**: Guarantees positive-definiteness on 32-bit single-precision floating point:
-  $$P_k = (I - K_k H_k) P_{k|k-1} (I - K_k H_k)^T + K_k R_k K_k^T$$
-- **Variance Floor**: $p_{00} \ge 10^{-6}\text{ mm}^2, p_{11} \ge 10^{-6}\text{ }^\circ\text{C}^2$ to prevent zero/negative variance collapse.
-
-### 2. Acoustic Model (Sound Speed in Vapor)
-The speed of sound $c$ in LPG vapor varies heavily with temperature and gas mixture:
-- **Primary Source (Reflector)**: If a physical reference reflector is mounted at distance $D_{ref}$:
-  $$c = \frac{2 \cdot D_{ref}}{t_{ref}} \text{ (m/s)}$$
-- **Fallback Source (Thermodynamics)**: Based on real-gas speed of sound model:
-  $$c = \sqrt{\frac{\gamma \cdot Z \cdot R \cdot T_K}{M}}$$
-  Where compressibility $Z \approx 0.8$, universal gas constant $R = 8.314\text{ J/(mol}\cdot\text{K)}$, and heat capacity ratio $\gamma$ and molar mass $M$ are calculated by composition weighting via `propaneFraction`.
-- **Distance to Liquid**: $d = \frac{c \cdot t_{flight}}{2 \cdot 1000}\text{ (mm)}$ (gated to $t_{flight} > 0$).
-- **Calculated Level**: $h = H - d - mountOffset$, clamped to $[0, 2R]$. If tank height $H$ is unconfigured ($\le 0$), it automatically defaults to nominal diameter $2R$.
-
-### 3. Tilt Correction (Tilted Tank Volume)
-- **Axial Sensor Offset**: If the sensor is mounted off-center by $x_{sensor}$:
-  $$h_{center} = h_{measured} - x_{sensor} \cdot \tan(\theta_{pitch})$$
-- **Volume Integration**: Volume is numerical-integrated along the pitch angle using a 24-node midpoint quadrature:
-  $$V_{Liters} = \sum_{i=1}^{24} \frac{A(h(x)) \cdot dx}{10^6}$$
-  Where local height $h(x) = \text{clamp}(h_{center} + x \cdot \tan(\theta_{pitch}), 0, 2R)$, and $dx = L / 24$.
-- **Trigonometric Domain Safeguard**:
-  $$\theta = 2 \cdot \arccos\left(\text{clamp}\left(\frac{R - h}{R}, -1.0, 1.0\right)\right)$$
-  Preventing floating-point domain errors ($\text{NaN}$) at empty ($h=0$) or full ($h=2R$) tank states.
-
-### 4. Thermodynamics, Mass, and Autonomy
-- **Density ($\rho$)**: Linearly interpolated from saturated liquid density tables for Propane and Butane at estimated EKF temperature.
-- **Custody Transfer ($V_{15}$)**: Computes standardized volume corrected to 15 °C for billing:
-  $$V_{15} = \frac{m}{\rho(15)}$$
-  Where mass $m = \rho(T) \cdot V_{measured}$.
-- **Diagnostics**:
-  - **Health Scores (0-100)**:
-    - Ultrasonic: 0 if invalid; 60 if gas-speed model and reflector disagree.
-    - Temperature: 0 if invalid; 50 if outside physical range $[-40, 60]^\circ\text{C}$.
-    - Pressure: $100 - |P_{measured} - P_{Antoine}(T)| \cdot 15$, clamped to $[0, 100]$.
-  - **Consumption & Autonomy**: Average consumption rate (L/day) with noise rectification filter and automatic refill detection ($>5$ L increases reset baseline without counting as consumption):
-    $$\text{Remaining Days} = \frac{V_{measured}}{\text{ConsumptionRate (L/day)}}$$
+1. **Stage 1 — Quick Pairing (`GLP-<DeviceID>` + SmartConfig)**:
+   - Triggered on unprovisioned first boot or immediately upon holding the physical button for **5.0 seconds** (without waiting for release).
+   - The status LED emits **2 short flashes + pause** (`100/100/100/700 ms`).
+   - The ESP32-S3 advertises the BLE GATT service `GLP-<DeviceID>` (accepting individual characteristics as well as unified JSON frames on `0x0014`) and listens for **Wi-Fi SmartConfig (`ESP-Touch / AirKiss`)** simultaneously.
+2. **Stage 2 — Compatible SoftAP Portal (`GLP-CONFIG-<DeviceID>`)**:
+   - Holding the button for another **5.0 seconds** while in Quick Pairing switches to the SoftAP `GLP-CONFIG-<DeviceID>` (password `glp12345`, IP `192.168.4.1`) with fast continuous blinking (`100 ms ON / 100 ms OFF`).
+   - A **short press** cancels pairing mode and resumes normal operation.
 
 ---
 
-## Step 4 — MQTT 5.0 Telemetry
+## Local LAN HTTP Diagnostics (`/zeroconf/*`) & mDNS
 
-Every 30 seconds, the device publishes telemetric data to `glp/telemetria/{device_id}`. Telemetry is suppressed during OTA updates.
+When the Wi-Fi link is active, [`LanZeroconfServer`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Net/LanZeroconfServer.h) listens on HTTP port **`8081`** and advertises `_ewelink._tcp.local` via mDNS:
 
-```json
-{
-  "Device": {
-    "ChipId": "A1B2C3D4E5F6",
-    "ChipType": "ESP32-S3",
-    "MacAddress": "XX:XX:XX:XX:XX:XX",
-    "FirmwareVersion": "1.0.0",
-    "DeviceId": "GLP-001",
-    "IMEI": "",
-    "IMSI": "",
-    "status": "connected",
-    "TypeConexion": "Wifi",
-    "IPAddress": "192.168.1.100"
-  },
-  "Timestamp": "2026-07-03T10:30:00.123Z",
-  "Details": {
-    "sensors_raw": {
-      "level_mm": 326.3,
-      "pressure_bar": 6.24,
-      "temp_celsius": 28.1
-    },
-    "sensors_filtered": {
-      "level_mm": 325.8,
-      "pressure_bar": 6.21,
-      "temp_celsius": 27.9,
-      "kalman_uncertainty_mm": 0.07
-    },
-    "volume": {
-      "liters": 145.3,
-      "gallons": 38.4,
-      "percentage": 72.1,
-      "density_kg_l": 0.563,
-      "mass_kg": 81.8,
-      "liters_15c": 143.9,
-      "anomaly": false
-    },
-    "tank": {
-      "radius_cm": 45.0,
-      "length_cm": 120.0
-    },
-    "gps": {
-      "lat": 18.4861,
-      "lng": -69.9312,
-      "valid": true
-    },
-    "rssi": -78,
-    "free_heap": 210000,
-    "uptime": 3600000,
-    "health": {
-      "ultrasonic": 100.0,
-      "pressure": 95.5,
-      "temperature": 100.0
-    },
-    "vapor_check": {
-      "p_measured": 6.21,
-      "p_antoine": 6.35,
-      "residual": -0.14
-    },
-    "consumption": {
-      "l_per_day": 12.4,
-      "remaining_days": 11.7
-    },
-    "acoustic": {
-      "c_used_ms": 226.5,
-      "source": "gas_model",
-      "healthy": true
-    }
-  }
-}
-```
+| HTTP `POST :8081` Endpoint | Description |
+|---|---|
+| `/zeroconf/info` | Returns `deviceid`, `sledOnline`, tank dimensions (`tankRadiusCm`, `tankLengthCm`), and Wi-Fi `rssi` |
+| `/zeroconf/signal_strength` | Returns Wi-Fi signal strength (`signalStrength` in dBm) |
+| `/zeroconf/sled` | Enables or disables the online status LED (`{"sledOnline":"on"\|"off"}`) |
+| `/zeroconf/wifi` | Updates Wi-Fi credentials in NVS |
+| `/zeroconf/ota_unlock` | Unlocks local OTA updates |
 
 ---
 
-## Step 5 — Remote Configuration
-
-With the device online, it listens to the configuration topic `glp/config/{device_id}`. Incoming JSON payloads are parsed dynamically and values are applied immediately to NVS. When geometry parameters change, the EKF filter is reset to converge with the new parameters.
-
-Supported remote configuration fields:
-
-```json
-{
-  "tank_radius_cm": 45.0,
-  "tank_length_cm": 120.0,
-  "mqtt_broker": "broker.hivemq.com",
-  "mqtt_port": 1883,
-  "ota_hmac_key": "s3cr3t-k3y",
-  "tank_height_cm": 95.0,
-  "mount_offset_cm": 5.0,
-  "press_slope": 10.0,
-  "press_offset": -0.5,
-  "temp_r_ref": 1000.0,
-  "temp_v_exc": 3.30,
-  "temp_offset_c": 0.0,
-  "propane_fraction": 0.7,
-  "sensor_axial_cm": 10.0,
-  "ref_distance_cm": 0.0
-}
-```
-
----
-
-## Step 6 — OTA Updates
-
-Firmware updates are sent asynchronously via MQTT using the `MQTTOTAv5` library:
-- **Transport**: Base64 encoded chunks.
-- **Verification**: SHA-256 and HMAC-SHA256 signature verification.
-- **Failsafe**: If execution fails after an update, the ESP-IDF OTA bootloader performs an automatic rollback to the previous partition.
-- **State Blocking**: Telemetry publishing is suppressed during active updates.
-
----
-
-## MQTT Topics
-
-| Topic | Direction | Content |
-|---|---|---|
-| `glp/telemetria/{device_id}` | Device → Broker | Telemetry payload JSON |
-| `glp/status/{device_id}` | Device → Broker | Will Message: `{"status":"offline","device_id":"..."}` |
-| `glp/config/{device_id}` | Broker → Device | Live configuration adjustments JSON |
-| `ota/{device_id}` | Broker → Device | Firmware in Base64 chunks |
-| `ota/{device_id}/progress` | Device → Broker | OTA progress update percent |
-| `ota/{device_id}/success` | Device → Broker | OTA successful installation report |
-| `ota/{device_id}/error` | Device → Broker | OTA failure reason payload |
-
----
-
-## Persistence (NVS)
-
-The persistent storage parameters are managed by the `Preferences` API under the `glp-config` namespace. Due to the 15-character key limit enforced by NVS in ESP-IDF/Arduino, names are mapped as follows:
-
-| NVS Key | JSON Payload Key | C++ Domain Struct Field | Type | Default Value |
-|---|---|---|---|---|
-| `apn` | `apn` | `apn` | String | `"internet.claro.com.do"` |
-| `apn_user` | `apn_user` | `apnUser` | String | `""` |
-| `apn_pass` | `apn_pass` | `apnPass` | String | `""` |
-| `mqtt_broker` | `mqtt_broker` | `mqttBroker` | String | `"broker.hivemq.com"` |
-| `mqtt_port` | `mqtt_port` | `mqttPort` | Int | `1883` |
-| `mqtt_user` | `mqtt_user` | `mqttUser` | String | `""` |
-| `mqtt_pass` | `mqtt_pass` | `mqttPass` | String | `""` |
-| `wifi_ssid` | `wifi_ssid` | `wifiSsid` | String | `""` |
-| `wifi_pass` | `wifi_pass` | `wifiPass` | String | `""` |
-| `device_id` | `device_id` | `deviceId` | String | `"GLP-001"` |
-| `radius` | `tank_radius_cm` | `tankRadiusCm` | Float | `45.0` |
-| `length` | `tank_length_cm` | `tankLengthCm` | Float | `120.0` |
-| `height` | `tank_height_cm` | `tankHeightCm` | Float | `0.0` |
-| `mount_off` | `mount_offset_cm`| `mountOffsetCm` | Float | `0.0` |
-| `p_slope` | `press_slope` | `calibration.pressSlope` | Float | `0.0` |
-| `p_offset` | `press_offset` | `calibration.pressOffset`| Float | `0.0` |
-| `t_rref` | `temp_r_ref` | `calibration.tempRRef` | Float | `1000.0` |
-| `t_vexc` | `temp_v_exc` | `calibration.tempVExc` | Float | `3.30` |
-| `t_offc` | `temp_offset_c` | `calibration.tempOffsetC`| Float | `0.0` |
-| `propane_fr` | `propane_fraction`| `propaneFraction` | Float | `1.0` |
-| `sensor_ax` | `sensor_axial_cm` | `sensorAxialCm` | Float | `0.0` |
-| `ref_dist` | `ref_distance_cm` | `refDistanceCm` | Float | `0.0` |
-| `ota_hmac` | `ota_hmac_key` | `otaHmacKey` | String | `""` |
-| `provisioned` | - | `provisioned` | Bool | `false` |
-
----
-
-## LED Indicators
-
-Peripherals are signaled via `GpioIndicator` mapping active states to specific digital pulse cycles:
-
-| Pulse Pattern | System State | Trigger Condition | Code Pattern |
-|---|---|---|---|
-| **Fast Blink** | `PROVISIONING` | Provisioning portal active | `blink(100, 100, 3)` (100ms ON / 100ms OFF, 3 cycles) |
-| **Slow Blink** | `CONNECTING` | Networking or MQTT handshake | `blink(500, 500, 1)` (500ms ON / 500ms OFF, 1 cycle) |
-| **Solid ON** | `OPERATIONAL` | Normal operation (connected) | `digitalWrite(pin_, HIGH)` (GPIO high) |
-| **Very Fast Blink**| `Anomaly` | Sensor discrepancy / invalid readings | `blink(50, 50, 6)` (50ms ON / 50ms OFF, 6 cycles) |
-| **Long Double Flash**| `Error` | Hardware or connection failures | `blink(1000, 200, 2)` (1000ms ON / 200ms OFF, 2 cycles) |
-
----
-
-## Installation & Build
-
-Requires [PlatformIO Core](https://platformio.org/).
+## Build & Host Unit Testing
 
 ```bash
-pio run                 # build (env: esp32-s3-n16r8)
-pio run -t upload       # flash the ESP32-S3
-pio device monitor      # serial monitor (115200 baud)
-```
+# Build ESP32-S3 firmware with PlatformIO
+pio run -e esp32-s3-n16r8
 
-Board configuration (`platformio.ini`):
-
-```ini
-[env:esp32-s3-n16r8]
-platform = espressif32
-board = esp32-s3-devkitc-1
-framework = arduino
-board_upload.flash_size = 16MB
-board_upload.maximum_size = 16777216
-board_build.arduino.memory_type = qio_opi   ; QIO flash + octal PSRAM (R8)
-board_build.partitions = partitions.csv      ; 16 MB: app0/app1 = 4 MB (OTA)
-build_unflags = -std=gnu++11
-build_flags   = -std=gnu++17 -DBOARD_HAS_PSRAM -DTINY_GSM_MODEM_SIM7600 -I src
-```
-
-**Dependencies** (`lib_deps`): `TinyGSM`, `TinyGPSPlus`,
-[`ESP32_MQTTv5`](https://github.com/JorgeGBeltre/ESP32_MQTTv5),
-[`MQTTOTAv5`](https://github.com/JorgeGBeltre/MQTTOTAv5), `ArduinoJson`,
-`NimBLE-Arduino`, `ESPAsyncWebServer`, `AsyncTCP`.
-
-### Host tests (Domain + Application)
-
-The Domain and Application layers are pure C++17 and can be tested locally on a PC with **CMake + GoogleTest** (no hardware needed):
-
-```bash
-cmake -S . -B build -DHOST_BUILD=ON
+# Run all 26 host unit tests (CMake + CTest)
+cmake -B build -DHOST_BUILD=ON -DGLP_BUILD_TESTS=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
-
-Suites: `test_sensor_fusion`, `test_config_service`, `test_connectivity_service`,
-`test_telemetry_service`, `test_firmware_controller`, `test_acoustic_model`,
-`test_calibrating_sensor_reader`, `test_consumption_estimator`, `test_lpg_thermo`,
-`test_sensor_calibrator`, `test_sensor_health`, `test_state_ekf`, `test_tank_geometry`,
-`test_tilt_correction`.
-
----
-
-## Project Structure
-
-```text
-GLP_Presure/
-├── platformio.ini            # S3 board, dependencies, partitions config
-├── partitions.csv            # 16 MB table (app0/app1 = 4 MB, OTA)
-├── CMakeLists.txt            # Host build configuration (glp_core + tests)
-├── README.md                 # Project documentation (this file)
-├── src/
-│   ├── Domain/               # Entities, interfaces, EKF/thermo logic (pure C++17)
-│   ├── Application/          # Orchestration services, DTOs, controllers
-│   ├── Infrastructure/       # Concrete HW drivers (NVS, BLE, WebServer, cellular, ADC)
-│   └── Presentation/main.cpp # Setup & loop (Composition root / DI)
-└── tests/                    # Host GoogleTest suite & unit test doubles
-```
-
----
-
-## License
-
-Licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
-
----
-
-## Contact
-
-Author: **Jorge Gaspar Beltre Rivera**  
-Project: **LPG IoT Measurement System — ESP32-S3 firmware**
-
-<p align="center">
-  <a href="https://www.linkedin.com/in/jorge-gaspar-beltre-rivera/" target="_blank"><img src="https://user-images.githubusercontent.com/74038190/235294012-0a55e343-37ad-4b0f-924f-c8431d9d2483.gif" alt="LinkedIn" width="100"></a>
-  <a href="https://github.com/JorgeGBeltre" target="_blank"><img src="https://user-images.githubusercontent.com/74038190/212257468-1e9a91f1-b626-4baa-b15d-5c385dfa7ed2.gif" alt="GitHub" width="100"></a>
-  <a href="mailto:Jorgegaspar3021@gmail.com"><img src="https://user-images.githubusercontent.com/74038190/216122065-2f028bae-25d6-4a3c-bc9f-175394ed5011.png" alt="E-Mail" width="100"></a>
-
-</p>
-
-## Support
-
-This project is developed independently. Even a small contribution helps me dedicate more time to development, testing, and releasing new features.
-
-
- <p align="center">
-  <a href="https://www.paypal.com/donate/?hosted_button_id=2VLA8BWT967LU">
-    <img src="https://www.paypalobjects.com/webstatic/icon/pp258.png"
-         alt="Donate with PayPal"
-         height="60">
-  </a>
-</p>

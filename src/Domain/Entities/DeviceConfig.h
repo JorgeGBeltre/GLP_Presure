@@ -1,20 +1,14 @@
 #pragma once
 
 #include <string>
-#include <cstdint>
-
 #include "Domain/Entities/SensorCalibration.h"
 
 namespace glp::domain {
 
 /**
- * Configuración del dispositivo — entidad de dominio PURA.
- *
- * Reemplaza al antiguo `struct AppConfig` (que usaba Arduino `String` y estaba
- * acoplado a `Preferences`). Aquí no hay ninguna dependencia de hardware: se usa
- * `std::string`, de modo que esta entidad compila y se testea en host.
- *
- * La persistencia vive en Infrastructure (ver IConfigRepository).
+ * Configuración persistente del dispositivo (entidad pura; sin dependencias de
+ * Preferences/NVS ni de Arduino String). Incluye identidad de hardware (`deviceKey`),
+ * token de vinculación (`bindToken`) y control del indicador LED (`sledOnline`).
  */
 struct DeviceConfig {
     // Conectividad celular
@@ -24,31 +18,37 @@ struct DeviceConfig {
 
     // Broker MQTT
     std::string mqttBroker;
-    int         mqttPort = 1883;
+    int         mqttPort = 8883;
     std::string mqttUser;
     std::string mqttPass;
 
-    // Conectividad WiFi (uplink alternativo al celular)
+    // WiFi
     std::string wifiSsid;
     std::string wifiPass;
 
-    // Identidad y geometría del tanque
+    // Identidad y vinculación
     std::string deviceId;
-    float       tankRadiusCm = 0.0f;
-    float       tankLengthCm = 0.0f;
+    std::string deviceKey;
+    std::string bindToken;
 
-    // Geometría adicional para el nivel (h = H − d) y calibración de sensores
-    float             tankHeightCm  = 0.0f;   // H: plano del sensor → piso interior
-    float             mountOffsetCm = 0.0f;   // zona muerta/standoff no incluida en H
+    // Geometría del tanque (cilindro horizontal con cabezas hemisféricas)
+    float tankRadiusCm = 0.0f;
+    float tankLengthCm = 0.0f;
+    float tankHeightCm = 0.0f;
+    float mountOffsetCm = 0.0f;
+
+    // Calibración de transductores
     SensorCalibration calibration{};
-    float             propaneFraction = 1.0f;   // 1.0 = propano puro (mezcla propano/butano)
-    float             sensorAxialCm   = 0.0f;    // posición del sensor a lo largo del eje (tilt)
-    float             refDistanceCm   = 0.0f;    // distancia al reflector de referencia acústico
 
-    // OTA
+    // Composición y montaje ultrasónico bottom-up
+    float propaneFraction = 0.60f;
+    float sensorAxialCm   = 0.0f;
+    float refDistanceCm   = 0.0f;
+
+    // Seguridad OTA y estado visual
     std::string otaHmacKey;
+    bool        sledOnline  = true;
 
-    // Estado
     bool provisioned = false;
 };
 

@@ -20,6 +20,9 @@ public:
 
     /** true si el dispositivo ya completó el provisioning. */
     virtual bool isProvisioned() = 0;
+
+    /** Persistencia granular del estado del indicador LED en línea (sledOnline). */
+    virtual bool saveSledOnline(bool enabled) { (void)enabled; return false; }
 };
 
 } // namespace glp::domain

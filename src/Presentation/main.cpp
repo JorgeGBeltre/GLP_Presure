@@ -1,150 +1,154 @@
-/**
- * main.cpp — Presentation / Composition Root
- *
- * Sistema IoT de Medición de GLP con ESP32.
- * Arquitectura: PROVISIONING -> CONNECTING -> OPERATIONAL (ver FirmwareController).
- *
- * Este archivo es el ÚNICO lugar donde se instancian implementaciones concretas
- * (Infrastructure) y se inyectan en los servicios de Application. No contiene
- * lógica de negocio: sólo cableado (dependency injection) y los hooks setup()/loop()
- * del framework Arduino.
- *
- * Hardware (sin cambios respecto a la versión previa):
- *   - Módulo 4G/LTE: SIM7600 (UART1 TX=26, RX=27, PWR=4)
- *   - GPS:           NMEA     (UART2 RX=16, TX=17)
- *   - Ultrasónico:   HC-SR04 / JSN-SR04T (TRIG=5, ECHO=18)
- *   - Presión:       ADC PIN=34   |  Temperatura: ADC PIN=35
- *   - LED estado:    GPIO=2       |  Botón BOOT:   GPIO=0 (pull-up)
- */
-
 #include <Arduino.h>
-
-#include "Application/Controllers/FirmwareController.h"
-#include "Application/Services/ConfigService.h"
-#include "Application/Services/ConnectivityService.h"
-#include "Application/Services/TelemetryService.h"
-#include "Application/Messaging/MqttTopics.h"
+#include <WiFi.h>
 
 #include "Infrastructure/Config/BoardConfig.h"
 #include "Infrastructure/Config/NvsConfigRepository.h"
 #include "Infrastructure/Config/RemoteConfigParser.h"
-#include "Infrastructure/System/EspDeviceRepository.h"
-#include "Infrastructure/Time/NtpTimeProvider.h"
+
+#include "Domain/Services/CalibratingSensorReader.h"
+#include "Infrastructure/Button/GpioButton.h"
 #include "Infrastructure/Gps/TinyGpsProvider.h"
 #include "Infrastructure/Indicator/GpioIndicator.h"
 #include "Infrastructure/Logging/SerialLogger.h"
 #include "Infrastructure/Messaging/Mqttv5Transport.h"
 #include "Infrastructure/Net/CellularLink.h"
+#include "Infrastructure/Net/LanZeroconfServer.h"
 #include "Infrastructure/Net/WifiLink.h"
 #include "Infrastructure/Ota/Mqttv5OtaService.h"
 #include "Infrastructure/Provisioning/ProvisioningPortals.h"
 #include "Infrastructure/Sensors/Esp32RawSensorReader.h"
 #include "Infrastructure/Sensors/Mpu6050TiltProvider.h"
-#include "Domain/Services/CalibratingSensorReader.h"
 #include "Infrastructure/Serialization/ArduinoJsonPayloadSerializer.h"
+#include "Infrastructure/System/EspDeviceRepository.h"
 #include "Infrastructure/System/EspSystemControl.h"
 #include "Infrastructure/Time/ArduinoClock.h"
+#include "Infrastructure/Time/NtpTimeProvider.h"
+
+#include "Application/Controllers/FirmwareController.h"
+#include "Application/Messaging/MqttTopics.h"
+#include "Application/Services/ConfigService.h"
+#include "Application/Services/ConnectivityService.h"
+#include "Application/Services/TelemetryService.h"
 
 using namespace glp;
 
-// ─── Constantes de hardware (pines en Infrastructure/Config/BoardConfig.h) ──
-static constexpr int          LED_PIN       = glp::board::LED_PIN;
-static constexpr int          BOOT_BTN_PIN  = glp::board::BOOT_BTN_PIN;
-static constexpr unsigned long BOOT_HOLD_MS = 5000;
-static constexpr unsigned long TELEMETRY_INTERVAL_MS = 30000;
-
-// ─── Infrastructure (implementaciones concretas) ───────────────
 static infra::ArduinoClock                 g_clock;
 static infra::SerialLogger                 g_logger;
 static infra::EspSystemControl             g_system;
-static infra::GpioIndicator                g_indicator{LED_PIN};
+static infra::GpioIndicator                g_indicator{board::LED_PIN};
+static infra::GpioButton                   g_button{board::BOOT_BTN_PIN, 50, 5000};
 static infra::NvsConfigRepository          g_configRepo;
+static infra::BleProvisioningPortal        g_blePortal;
+static infra::WifiApProvisioningPortal     g_apPortal;
 static infra::Esp32RawSensorReader         g_rawSensors;
-static infra::Mpu6050TiltProvider          g_tilt;
 static infra::TinyGpsProvider              g_gps;
+static infra::Mpu6050TiltProvider          g_tilt;
 static infra::CellularLink                 g_cellular;
 static infra::Mqttv5Transport              g_transport;
 static infra::Mqttv5OtaService             g_ota;
+static infra::EspDeviceRepository          g_deviceRepo;
+static infra::NtpTimeProvider              g_timeProvider;
 static infra::ArduinoJsonPayloadSerializer g_serializer;
-static infra::EspDeviceRepository          g_device;
-static infra::NtpTimeProvider              g_time;
-static infra::BleProvisioningPortal        g_ble;
-static infra::WifiApProvisioningPortal     g_wifiAp;
-static infra::SmartConfigPortal            g_smartConfig;
+static infra::LanZeroconfServer            g_lanServer{g_indicator, g_configRepo, 8081};
 
-// El grafo de Application se construye en setup() (necesita el device_id ya
-// cargado para derivar los tópicos MQTT). Se mantiene vía punteros estáticos.
-static app::FirmwareController* g_controller = nullptr;
+static app::ConfigService                  g_configService{g_configRepo};
+static infra::WifiLink                     g_wifi{g_configService.config()};
+static domain::CalibratingSensorReader     g_sensors{g_rawSensors, g_configService.config()};
+static app::ConnectivityService            g_connectivity{g_wifi, g_cellular, g_transport, g_logger};
 
-// ─── ¿Forzar provisioning? (BOOT mantenido >5s) ────────────────
-static bool shouldForceProvisioning() {
-    if (digitalRead(BOOT_BTN_PIN) == LOW) {
-        const unsigned long start = millis();
-        while (digitalRead(BOOT_BTN_PIN) == LOW) {
-            if (millis() - start > BOOT_HOLD_MS) return true;
-            delay(50);
+static app::TelemetryService*              g_telemetry  = nullptr;
+static app::FirmwareController*            g_controller = nullptr;
+
+// Flujo de emparejamiento de 2 etapas para GLP_Presure:
+// - Etapa 1: Quick Pairing (BLE GATT GLP-<DeviceID> + SmartConfig ESP-Touch)
+// - Etapa 2: SoftAP GLP-CONFIG-<DeviceID> (tras 2ª pulsación larga de 5s o fallback)
+static void runPairingWorkflow(bool isInitialBoot) {
+    Serial.println("[PAIRING] Entrando en Etapa 1: Quick Pairing (BLE + SmartConfig)...");
+    QuickPairingResult res = g_blePortal.runInteractive(
+        isInitialBoot ? 120000UL : 180000UL,
+        g_indicator,
+        g_button
+    );
+
+    if (res == QuickPairingResult::Provisioned) {
+        Serial.println("[PAIRING] Credenciales recibidas en Quick Pairing. Reiniciando...");
+        delay(400);
+        ESP.restart();
+        return;
+    }
+
+    if (res == QuickPairingResult::CancelledByButton) {
+        Serial.println("[PAIRING] Emparejamiento cancelado por pulsación corta.");
+        return;
+    }
+
+    if (res == QuickPairingResult::SwitchToSoftAp || isInitialBoot) {
+        Serial.println("[PAIRING] Entrando en Etapa 2: SoftAP GLP-CONFIG-<DeviceID>...");
+        if (g_apPortal.runInteractive(300000UL, g_indicator, g_button)) {
+            delay(400);
+            ESP.restart();
         }
     }
-    return false;
 }
 
 void setup() {
     Serial.begin(115200);
-    delay(500);
-    pinMode(BOOT_BTN_PIN, INPUT_PULLUP);
+    delay(200);
 
-    g_configRepo.begin();
+    initConfig();
+    g_button.init();
+
+    bool provisioned = g_configService.load();
+    g_indicator.setSledOnline(g_configService.config().sledOnline);
+
+    bool forceReprovision = (digitalRead(board::BOOT_BTN_PIN) == LOW);
+    if (!provisioned || !g_configService.isProvisioned() || forceReprovision) {
+        if (forceReprovision) {
+            Serial.println("[BOOT] Botón BOOT presionado -> iniciando Quick Pairing...");
+            resetConfig();
+        }
+        runPairingWorkflow(true);
+        g_configService.load();
+    }
+
     g_rawSensors.begin();
-    g_tilt.begin();
     g_gps.begin();
+    g_tilt.begin();
 
-    // Servicios de Application (static => viven toda la ejecución).
-    static app::ConfigService config{g_configRepo};
-    config.load();
-
-    // Reader calibrado: crudo (ADS1115 + ultrasónico) -> físico, leyendo la config viva.
-    static domain::CalibratingSensorReader sensors{g_rawSensors, config.config()};
-
-    // Enlace WiFi: lee SSID/clave de la config viva (uplink preferido si existe).
-    static infra::WifiLink wifi{config.config()};
-    static app::ConnectivityService connectivity{wifi, g_cellular, g_transport, g_logger};
-
-    const app::MqttTopics topics = app::MqttTopics::forDevice(config.config().deviceId);
+    std::string devId = !g_configService.config().deviceId.empty()
+                            ? g_configService.config().deviceId
+                            : g_deviceRepo.identity().chipId;
+    app::MqttTopics topics = app::MqttTopics::forDevice(devId);
 
     static app::TelemetryService telemetry{
-        sensors, g_gps, g_tilt, connectivity, g_ota, g_device, g_time, g_serializer,
-        g_clock, config, topics, TELEMETRY_INTERVAL_MS};
+        g_sensors, g_gps, g_tilt, g_connectivity, g_ota,
+        g_deviceRepo, g_timeProvider, g_serializer, g_clock,
+        g_configService, topics, 30000UL};
+    g_telemetry = &telemetry;
 
-    g_time.sync();   // registra SNTP (UTC); resuelve en background al haber red
+    std::vector<app::FirmwareController::ProvisioningStep> steps = {
+        {&g_blePortal, 120000UL},
+        {&g_apPortal,  300000UL}
+    };
 
-    // Config remota (glp/config/{id}): parsea -> aplica vía ConfigService ->
-    // si cambió la geometría, reinicia los filtros de fusión.
-    // config y telemetry son static locals (duración estática) => usables en el
-    // lambda sin capturarlos; sólo `topics` (automático) se captura por valor.
-    g_transport.onMessage(
-        [topics](const std::string& topic, const std::string& payload) {
-            if (topic != topics.config) return;
-            if (auto update = infra::RemoteConfigParser::parse(payload)) {
-                if (config.applyRemoteUpdate(*update)) {
-                    telemetry.resetFilters();
-                    Serial.println("[CFG] Config remota aplicada.");
-                }
-            }
-        });
-
-    // Transportes de provisioning en orden: BLE -> SoftAP -> SmartConfig.
-    // BLE y SoftAP entregan toda la config (incluye WiFi); SmartConfig sólo WiFi.
     static app::FirmwareController controller{
-        config,
-        { {&g_ble, 30000}, {&g_wifiAp, 300000}, {&g_smartConfig, 120000} },
-        connectivity, telemetry, g_gps, g_ota, g_indicator, g_system,
-        g_clock, g_logger};
-
-    controller.setup(shouldForceProvisioning());
+        g_configService, std::move(steps), g_connectivity, telemetry,
+        g_gps, g_ota, g_indicator, g_system, g_clock, g_logger};
     g_controller = &controller;
+
+    g_controller->setup(false);
 }
 
 void loop() {
-    if (g_controller) g_controller->tick();
-    delay(10); // yield
+    auto btnEv = g_button.update();
+    if (btnEv == domain::ButtonEvent::LongPress) {
+        Serial.println("[BTN] Pulsación larga (5.0s) detectada -> Iniciando Quick Pairing...");
+        runPairingWorkflow(false);
+    }
+
+    g_indicator.update();
+    g_lanServer.loop(WiFi.status() == WL_CONNECTED);
+    if (g_controller) {
+        g_controller->tick();
+    }
 }
