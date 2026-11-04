@@ -52,6 +52,12 @@ void initMQTT() {
 
         // OTA must be initialized INSIDE onConnect() — per library examples
         initOTA();
+        MQTTProperties reconnectWillProps;
+        reconnectWillProps.setContentType("application/json");
+        reconnectWillProps.setWillDelay(5);
+        mqtt.setWill("glp/status/" + config.device_id,
+                     "{\"status\":\"offline\",\"device_id\":\"" + config.device_id + "\"}",
+                     1, true, &reconnectWillProps);
     });
 
     // --- On disconnect ---
