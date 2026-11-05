@@ -44,6 +44,8 @@ public:
 
     /** IP local del enlace activo ("0.0.0.0" si no hay). */
     std::string activeIp();
+    bool isCellularJammingDetected() const { return cellular_.isJammingDetected(); }
+    std::string cellularResolvedApn() const { return cellular_.resolvedApn(); }
 
 private:
     domain::INetworkLink& activeLink();

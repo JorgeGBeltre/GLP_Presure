@@ -37,6 +37,8 @@ public:
 
     /** Dirección IP local del enlace (o "0.0.0.0" si no aplica). */
     virtual std::string ipAddress() = 0;
+    virtual bool isJammingDetected() const { return false; }
+    virtual std::string resolvedApn() const { return {}; }
 };
 
 } // namespace glp::domain

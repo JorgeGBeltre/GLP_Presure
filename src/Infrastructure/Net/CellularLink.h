@@ -14,6 +14,8 @@ public:
     bool isConnected() override { return isSimConnected(); }
     int  rssi() override { return getSignalRSSI(); }
     std::string ipAddress() override { return getSimLocalIp(); }
+    bool isJammingDetected() const override { return isSimJammingDetected(); }
+    std::string resolvedApn() const override { return getSimResolvedApn(); }
 };
 
 } // namespace glp::infra

@@ -605,8 +605,8 @@ build_flags   = -std=gnu++17 -DBOARD_HAS_PSRAM -DTINY_GSM_MODEM_SIM7600 -I src
 ```
 
 **Dependencies** (`lib_deps`): `TinyGSM`, `TinyGPSPlus`,
-[`ESP32_MQTTv5`](https://github.com/JorgeGBeltre/ESP32_MQTTv5) (`v1.0.6`, linked via `file://../ESP32_MQTTv5`),
-[`MQTTOTAv5`](https://github.com/JorgeGBeltre/MQTTOTAv5) (`v1.0.3`, linked via `file://../MQTTOTAv5`), `ArduinoJson`,
+[`ESP32_MQTTv5`](https://github.com/JorgeGBeltre/ESP32_MQTTv5) (`v1.0.6`),
+[`MQTTOTAv5`](https://github.com/JorgeGBeltre/MQTTOTAv5) (`v1.0.3`), `ArduinoJson`,
 `NimBLE-Arduino`, `ESPAsyncWebServer`, `AsyncTCP`.
 
 ### Host tests (Domain + Application)

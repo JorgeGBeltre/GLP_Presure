@@ -2,7 +2,6 @@
 
 #include "Application/Dto/TelemetrySnapshot.h"
 #include "Domain/Services/SensorHealth.h"
-#include "Infrastructure/Net/sim_module.h"
 
 namespace glp::app {
 
@@ -58,8 +57,8 @@ bool TelemetryService::publishTelemetry() {
     snap.consumptionLpd   = consumption_.litersPerDay();
     snap.remainingDays    = consumption_.remainingDays(est.volumeLiters);
     snap.vaporPressureBar = domain::LpgThermo::vaporPressureBar(est.tempCelsius, frac);
-    snap.cellularJamming  = isSimJammingDetected();
-    snap.resolvedApn      = getSimResolvedApn();
+    snap.cellularJamming  = conn_.isCellularJammingDetected();
+    snap.resolvedApn      = conn_.cellularResolvedApn();
 
     return conn_.transport().publish(topics_.telemetry, serializer_.telemetry(snap));
 }
