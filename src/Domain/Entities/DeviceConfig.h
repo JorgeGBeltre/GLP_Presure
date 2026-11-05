@@ -47,7 +47,8 @@ struct DeviceConfig {
 
     // Seguridad OTA y estado visual
     std::string otaHmacKey;
-    bool        sledOnline  = true;
+    bool        sledOnline   = true;
+    bool        accountBound = false;
 
     bool provisioned = false;
 };

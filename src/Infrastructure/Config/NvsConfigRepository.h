@@ -62,11 +62,12 @@ private:
         d.refDistanceCm     = c.ref_distance_cm;
         d.otaHmacKey        = c.ota_hmac_key.c_str();
         d.sledOnline        = c.sled_online;
+        d.accountBound      = c.account_bound;
         return d;
     }
 
     static AppConfig fromDomain(const domain::DeviceConfig& d) {
-        AppConfig c;
+        AppConfig c = ::config;
         c.apn               = d.apn.c_str();
         c.apn_user          = d.apnUser.c_str();
         c.apn_pass          = d.apnPass.c_str();
@@ -93,6 +94,7 @@ private:
         c.ref_distance_cm   = d.refDistanceCm;
         c.ota_hmac_key      = d.otaHmacKey.c_str();
         c.sled_online       = d.sledOnline;
+        c.account_bound     = d.accountBound;
         return c;
     }
 };

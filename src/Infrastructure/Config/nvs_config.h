@@ -2,6 +2,8 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
+constexpr const char* GLP_FIRMWARE_VERSION = "v1.0.1";
+
 struct AppConfig {
     String apn;
     String apn_user;
@@ -29,12 +31,29 @@ struct AppConfig {
     float  ref_distance_cm = 0.0f;
     String ota_hmac_key;
     bool   sled_online = true;
+    bool   account_bound = false;
+    String last_wifi_error;
 };
 
 extern AppConfig config;
 
 void initConfig();
 bool isProvisioned();
+bool isAccountBound();
+bool hasValidWifiCredentials();
+bool hasValidCellularCredentials();
+bool hasValidBrokerCredentials();
+void computeUnlinkProofHex(const char* deviceKey, const char* chipId, char outHex[33]);
+bool verifyUnlinkProof(const char* deviceKey, const char* chipId, const char* providedHex);
+const char* resolveDeviceConfigState(bool wifiConnected, bool cellularConnected, bool mqttConnected);
+const char* resolveDeviceCredentialMode(bool wifiConnected);
+
+void setCellularProvisioningSnapshot(bool simPresent, bool apnAutoDetected, bool cellularConnected, const char* resolvedApn);
+bool isCellularSimPresent();
+bool isCellularApnAutoDetected();
+bool isCellularDataConnected();
+const char* getCellularResolvedApn();
+
 void saveConfig();
 void loadConfig();
 void resetConfig();

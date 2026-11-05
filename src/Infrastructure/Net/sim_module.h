@@ -4,6 +4,7 @@
 #include "TinyGsmClientBridge.h"
 
 bool initSIM();
+void probeSimProvisioningState();
 bool isSimConnected();
 int  getSignalRSSI();
 bool isSimJammingDetected();

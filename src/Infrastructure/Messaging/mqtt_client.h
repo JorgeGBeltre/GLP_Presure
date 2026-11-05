@@ -12,6 +12,8 @@ void mqttLoop();
 bool isMQTTConnected();
 
 // Sumidero de mensajes entrantes. Lo registra Infrastructure/Messaging/
-// Mqttv5Transport para entregar (topic, payload) a la capa de Application, en
-// lugar de manejar la config remota aquí abajo.
+// Mqttv5Transport para entregar (topic, payload) a la capa de Application.
 void setMqttMessageSink(std::function<void(const String& topic, const String& payload)> sink);
+
+// Callback invocado cuando se verifica criptográficamente una orden de desvinculación de cuenta.
+void setMqttUnlinkVerifiedCallback(std::function<void()> cb);

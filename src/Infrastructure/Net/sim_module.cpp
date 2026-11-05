@@ -72,14 +72,85 @@ static void powerOnSIM() {
     delay(3000);
 }
 
+static String queryModemLine(const char* cmd, unsigned long timeoutMs) {
+    while (simSerial.available()) simSerial.read();
+    simSerial.println(cmd);
+    unsigned long start = millis();
+    String resp;
+    while (millis() - start < timeoutMs) {
+        while (simSerial.available()) {
+            resp += static_cast<char>(simSerial.read());
+        }
+        if (resp.indexOf("OK") >= 0 || resp.indexOf("ERROR") >= 0) break;
+        delay(10);
+    }
+    return resp;
+}
+
+void probeSimProvisioningState() {
+    simSerial.begin(SIM_BAUD, SERIAL_8N1, SIM_RX_PIN, SIM_TX_PIN);
+    delay(80);
+    if (!modem.testAT(600)) {
+        setCellularProvisioningSnapshot(false, false, false, "");
+        return;
+    }
+    const bool simReady = (modem.getSimStatus() == SIM_READY);
+    bool autoApn = false;
+    bool gprsConn = modem.isGprsConnected();
+    String detectedApn;
+
+    if (simReady) {
+        String imsi = modem.getIMSI();
+        if (imsi.length() >= 5) {
+            detectedApn = autoResolveApnFromImsi(imsi);
+            if (!detectedApn.isEmpty()) {
+                autoApn = true;
+            }
+        }
+        if (detectedApn.isEmpty()) {
+            String cgdcont = queryModemLine("AT+CGDCONT?", 800);
+            int tag = cgdcont.indexOf("+CGDCONT:");
+            if (tag >= 0) {
+                int qCount = 0;
+                int qStart = -1;
+                for (int i = tag; i < (int)cgdcont.length(); ++i) {
+                    if (cgdcont[i] == '"') {
+                        ++qCount;
+                        if (qCount == 3) qStart = i + 1;
+                        else if (qCount == 4 && qStart > 0) {
+                            String cand = cgdcont.substring(qStart, i);
+                            cand.trim();
+                            if (cand.length() > 0) {
+                                detectedApn = cand;
+                                autoApn = true;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!detectedApn.isEmpty()) {
+        _resolvedApn = detectedApn.c_str();
+    }
+    setCellularProvisioningSnapshot(simReady, autoApn, gprsConn, _resolvedApn.c_str());
+    Serial.printf("[SIM] Sondeo celular GLP: SIM=%d, autoAPN=%d (%s), LTE=%d\n",
+                  simReady ? 1 : 0, autoApn ? 1 : 0, _resolvedApn.c_str(), gprsConn ? 1 : 0);
+}
+
 bool initSIM() {
     simSerial.begin(SIM_BAUD, SERIAL_8N1, SIM_RX_PIN, SIM_TX_PIN);
     Serial.println("[SIM] Initializing SIM7600 (4G/LTE)...");
 
-    powerOnSIM();
+    if (!modem.testAT(600)) {
+        powerOnSIM();
+    }
 
     if (!modem.init()) {
         Serial.println("[SIM] Modem init FAILED");
+        setCellularProvisioningSnapshot(false, false, false, "");
         return false;
     }
 
@@ -88,10 +159,13 @@ bool initSIM() {
 
     String imsi = modem.getIMSI();
     String targetApn = config.apn;
+    bool autoApn = false;
     if (targetApn.isEmpty() && imsi.length() >= 5) {
         targetApn = autoResolveApnFromImsi(imsi);
+        autoApn = !targetApn.isEmpty();
     }
     _resolvedApn = targetApn.c_str();
+    setCellularProvisioningSnapshot(imsi.length() >= 5, autoApn, false, _resolvedApn.c_str());
 
     // Backoff reconnect: up to 5 retries with exponential delay (fallback to IMSI APN on retry)
     int  retry   = 0;

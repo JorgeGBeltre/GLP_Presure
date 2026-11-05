@@ -1,4 +1,5 @@
 #include "Infrastructure/Net/LanZeroconfServer.h"
+#include "Infrastructure/Config/nvs_config.h"
 #include "Application/Services/CryptoUtils.h"
 #include <ArduinoJson.h>
 #include <ESPmDNS.h>
@@ -7,6 +8,8 @@
 #include <cstring>
 
 namespace glp::infra {
+
+static constexpr uint16_t DISCOVERY_UDP_PORT = 48899;
 
 LanZeroconfServer::LanZeroconfServer(domain::IIndicator& indicator,
                                      domain::IConfigRepository& configRepo,
@@ -19,7 +22,7 @@ LanZeroconfServer::LanZeroconfServer(domain::IIndicator& indicator,
 void LanZeroconfServer::registerEndpoint(const char* uri) {
     server_.on(uri, HTTP_POST, [this, uri]() {
         String body = server_.arg("plain");
-        char responseBuf[768] = {0};
+        char responseBuf[896] = {0};
         dispatchZeroconf(uri, body, responseBuf, sizeof(responseBuf));
         server_.send(200, "application/json", responseBuf);
     });
@@ -33,14 +36,20 @@ void LanZeroconfServer::startServer() {
     const std::string devId = !devCfg.deviceId.empty() ? devCfg.deviceId : "GLP0001";
 
     char hostName[48];
-    std::snprintf(hostName, sizeof(hostName), "eWeLink_%s", devId.c_str());
+    std::snprintf(hostName, sizeof(hostName), "iot_%s", devId.c_str());
     if (MDNS.begin(hostName)) {
-        MDNS.addService("_ewelink", "_tcp", port_);
-        MDNS.addServiceTxt("_ewelink", "_tcp", "txtvers", "1");
-        MDNS.addServiceTxt("_ewelink", "_tcp", "id", devId.c_str());
-        MDNS.addServiceTxt("_ewelink", "_tcp", "type", "glp_sensor");
-        MDNS.addServiceTxt("_ewelink", "_tcp", "apivers", "1");
+        MDNS.addService("_iot", "_tcp", port_);
+        MDNS.addServiceTxt("_iot", "_tcp", "txtvers", "1");
+        MDNS.addServiceTxt("_iot", "_tcp", "id", devId.c_str());
+        MDNS.addServiceTxt("_iot", "_tcp", "type", "glp_pressure");
+        MDNS.addServiceTxt("_iot", "_tcp", "apivers", "1");
     }
+
+    server_.on("/zeroconf/info", HTTP_GET, [this]() {
+        char responseBuf[896] = {0};
+        dispatchZeroconf("/zeroconf/info", "{}", responseBuf, sizeof(responseBuf));
+        server_.send(200, "application/json", responseBuf);
+    });
 
     registerEndpoint("/zeroconf/sled");
     registerEndpoint("/zeroconf/info");
@@ -48,8 +57,10 @@ void LanZeroconfServer::startServer() {
     registerEndpoint("/zeroconf/wifi");
     registerEndpoint("/zeroconf/config");
     registerEndpoint("/zeroconf/ota_unlock");
+    registerEndpoint("/zeroconf/unlink");
 
     server_.begin();
+    udpRunning_ = (udp_.begin(DISCOVERY_UDP_PORT) == 1);
     running_ = true;
     notifyMdnsStateChange();
     Serial.printf("[LAN] Servidor HTTP Zeroconf GLP iniciado en puerto %u (mDNS: %s.local)\n", port_, hostName);
@@ -57,9 +68,58 @@ void LanZeroconfServer::startServer() {
 
 void LanZeroconfServer::stopServer() {
     if (!running_) return;
+    if (udpRunning_) {
+        udp_.stop();
+        udpRunning_ = false;
+    }
     server_.stop();
     MDNS.end();
     running_ = false;
+}
+
+void LanZeroconfServer::handleUdpDiscovery() {
+    if (!udpRunning_) return;
+    int pktLen = udp_.parsePacket();
+    if (pktLen <= 0 || pktLen > 256) return;
+
+    char pkt[257] = {0};
+    int n = udp_.read(pkt, 256);
+    if (n <= 0) return;
+    pkt[n] = '\0';
+
+    if (std::strstr(pkt, "IOT_DISCOVER") == nullptr && std::strstr(pkt, "VESIS_DISCOVER") == nullptr) {
+        return;
+    }
+
+    domain::DeviceConfig devCfg;
+    configRepo_.load(devCfg);
+    const char* credMode = resolveDeviceCredentialMode(true);
+    const String effectiveApn = config.apn.length() > 0 ? config.apn : String(getCellularResolvedApn());
+
+    StaticJsonDocument<512> doc;
+    doc["deviceid"]          = devCfg.deviceId.c_str();
+    doc["device_id"]         = devCfg.deviceId.c_str();
+    doc["device_family"]     = "glp_pressure";
+    doc["device_code"]       = 4;
+    doc["device_type"]       = "GLP-Sensor";
+    doc["model"]             = "VESIS-GLP-S3";
+    doc["fwVersion"]         = GLP_FIRMWARE_VERSION;
+    doc["ip"]                = WiFi.localIP().toString();
+    doc["port"]              = port_;
+    doc["credential_mode"]   = credMode;
+    doc["apn_auto_detected"] = isCellularApnAutoDetected();
+    doc["adopt_ready"]       = (std::strcmp(credMode, "adopt_only") == 0);
+    doc["apn"]               = effectiveApn;
+    doc["account_bound"]     = isAccountBound();
+    if (!isAccountBound()) {
+        doc["apikey"] = devCfg.deviceKey.c_str();
+    }
+
+    char out[512];
+    size_t outLen = serializeJson(doc, out, sizeof(out));
+    udp_.beginPacket(udp_.remoteIP(), udp_.remotePort());
+    udp_.write(reinterpret_cast<const uint8_t*>(out), outLen);
+    udp_.endPacket();
 }
 
 void LanZeroconfServer::loop(bool wifiConnected) {
@@ -71,6 +131,7 @@ void LanZeroconfServer::loop(bool wifiConnected) {
         startServer();
     }
     server_.handleClient();
+    handleUdpDiscovery();
 }
 
 void LanZeroconfServer::notifyMdnsStateChange() {
@@ -91,7 +152,7 @@ void LanZeroconfServer::notifyMdnsStateChange() {
                   devCfg.tankRadiusCm,
                   devCfg.tankLengthCm);
 
-    MDNS.addServiceTxt("_ewelink", "_tcp", "seq", static_cast<const char*>(seqBuf));
+    MDNS.addServiceTxt("_iot", "_tcp", "seq", static_cast<const char*>(seqBuf));
 
     if (!devCfg.deviceKey.empty()) {
         uint8_t rawIv[16] = {0};
@@ -101,14 +162,14 @@ void LanZeroconfServer::notifyMdnsStateChange() {
         char dataB64[360] = {0};
         if (app::CryptoUtils::encryptZeroconfPayload(
                 devCfg.deviceKey.c_str(), ivB64, plainData, dataB64, sizeof(dataB64))) {
-            MDNS.addServiceTxt("_ewelink", "_tcp", "encrypt", "true");
-            MDNS.addServiceTxt("_ewelink", "_tcp", "iv", static_cast<const char*>(ivB64));
-            MDNS.addServiceTxt("_ewelink", "_tcp", "data1", static_cast<const char*>(dataB64));
+            MDNS.addServiceTxt("_iot", "_tcp", "encrypt", "true");
+            MDNS.addServiceTxt("_iot", "_tcp", "iv", static_cast<const char*>(ivB64));
+            MDNS.addServiceTxt("_iot", "_tcp", "data1", static_cast<const char*>(dataB64));
             return;
         }
     }
 
-    MDNS.addServiceTxt("_ewelink", "_tcp", "data1", static_cast<const char*>(plainData));
+    MDNS.addServiceTxt("_iot", "_tcp", "data1", static_cast<const char*>(plainData));
 }
 
 void LanZeroconfServer::dispatchZeroconf(const char* uri, const String& rawBody, char* respBuf, size_t respBufSize) {
@@ -189,21 +250,47 @@ void LanZeroconfServer::dispatchZeroconf(const char* uri, const String& rawBody,
 
     if (std::strcmp(uri, "/zeroconf/info") == 0) {
         ++sequence_;
-        std::snprintf(
-            respBuf, respBufSize,
-            "{\"sequence\":\"%u\",\"seq\":%u,\"error\":0,\"data\":{"
-            "\"deviceid\":\"%s\",\"sledOnline\":\"%s\",\"apn\":\"%s\","
-            "\"mqttBroker\":\"%s\",\"mqttPort\":%d,"
-            "\"tankRadiusCm\":%.1f,\"tankLengthCm\":%.1f,\"rssi\":%d}}",
-            sequence_, sequence_,
-            devCfg.deviceId.c_str(),
-            indicator_.isSledOnline() ? "on" : "off",
-            devCfg.apn.c_str(),
-            devCfg.mqttBroker.c_str(),
-            devCfg.mqttPort,
-            devCfg.tankRadiusCm,
-            devCfg.tankLengthCm,
-            (int)WiFi.RSSI());
+        const char* credMode = resolveDeviceCredentialMode(true);
+        const String effectiveApn = !devCfg.apn.empty() ? String(devCfg.apn.c_str()) : String(getCellularResolvedApn());
+        StaticJsonDocument<640> respDoc;
+        respDoc["sequence"] = String(sequence_);
+        respDoc["seq"]      = sequence_;
+        respDoc["error"]    = 0;
+        JsonObject d = respDoc.createNestedObject("data");
+        d["deviceid"]          = devCfg.deviceId.c_str();
+        d["device_family"]     = "glp_pressure";
+        d["device_code"]       = 4;
+        d["device_type"]       = "GLP-Sensor";
+        d["model"]             = "VESIS-GLP-S3";
+        d["fwVersion"]         = GLP_FIRMWARE_VERSION;
+        d["credential_mode"]   = credMode;
+        d["apn_auto_detected"] = isCellularApnAutoDetected();
+        d["adopt_ready"]       = (std::strcmp(credMode, "adopt_only") == 0);
+        d["account_bound"]     = devCfg.accountBound;
+        d["sledOnline"]        = indicator_.isSledOnline() ? "on" : "off";
+        d["apn"]               = effectiveApn;
+        d["mqttBroker"]        = devCfg.mqttBroker.c_str();
+        d["mqttPort"]          = devCfg.mqttPort;
+        d["tankRadiusCm"]      = devCfg.tankRadiusCm;
+        d["tankLengthCm"]      = devCfg.tankLengthCm;
+        d["rssi"]              = (int)WiFi.RSSI();
+        if (!devCfg.accountBound) {
+            d["apikey"] = devCfg.deviceKey.c_str();
+        }
+        serializeJson(respDoc, respBuf, respBufSize);
+        return;
+    }
+
+    if (std::strcmp(uri, "/zeroconf/unlink") == 0) {
+        const char* proof = dataObj["unlink_proof"] | dataObj["proof"];
+        if (!proof || !verifyUnlinkProof(devCfg.deviceKey.c_str(), devCfg.deviceId.c_str(), proof)) {
+            writeError(403);
+            return;
+        }
+        writeError(0);
+        if (unlinkCb_) {
+            unlinkCb_();
+        }
         return;
     }
 
@@ -226,21 +313,34 @@ void LanZeroconfServer::dispatchZeroconf(const char* uri, const String& rawBody,
         if (const char* ap = dataObj["apn_pass"]) {
             devCfg.apnPass = ap;
         }
+        bool hasBrokerBundle = false;
         if (const char* brk = dataObj["mqtt_broker"] | (dataObj["serverName"] | dataObj["server"])) {
-            if (std::strlen(brk) > 0) devCfg.mqttBroker = brk;
+            if (std::strlen(brk) > 0) {
+                devCfg.mqttBroker = brk;
+                hasBrokerBundle = true;
+            }
         }
         if (dataObj.containsKey("mqtt_port") || dataObj.containsKey("port")) {
             int p = dataObj["mqtt_port"] | (dataObj["port"] | 0);
             if (p > 0 && p <= 65535) devCfg.mqttPort = p;
         }
         if (const char* usr = dataObj["mqtt_user"] | (dataObj["apikey"] | dataObj["account"])) {
-            if (std::strlen(usr) > 0) devCfg.mqttUser = usr;
+            if (std::strlen(usr) > 0) {
+                devCfg.mqttUser = usr;
+                hasBrokerBundle = true;
+            }
         }
         if (const char* mp = dataObj["mqtt_pass"]) {
             devCfg.mqttPass = mp;
         }
         if (const char* tok = dataObj["bind_token"] | dataObj["token"]) {
-            devCfg.bindToken = tok;
+            if (std::strlen(tok) > 0) {
+                devCfg.bindToken = tok;
+                hasBrokerBundle = true;
+            }
+        }
+        if (hasBrokerBundle) {
+            devCfg.accountBound = true;
         }
         if (dataObj.containsKey("tank_radius_cm")) {
             devCfg.tankRadiusCm = dataObj["tank_radius_cm"].as<float>();
@@ -271,4 +371,3 @@ void LanZeroconfServer::dispatchZeroconf(const char* uri, const String& rawBody,
 }
 
 } // namespace glp::infra
-

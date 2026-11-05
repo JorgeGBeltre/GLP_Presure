@@ -4,6 +4,7 @@
 #include "Infrastructure/Config/BoardConfig.h"
 #include "Infrastructure/Config/NvsConfigRepository.h"
 #include "Infrastructure/Config/RemoteConfigParser.h"
+#include "Infrastructure/Config/nvs_config.h"
 
 #include "Domain/Services/CalibratingSensorReader.h"
 #include "Infrastructure/Button/GpioButton.h"
@@ -11,9 +12,11 @@
 #include "Infrastructure/Indicator/GpioIndicator.h"
 #include "Infrastructure/Logging/SerialLogger.h"
 #include "Infrastructure/Messaging/Mqttv5Transport.h"
+#include "Infrastructure/Messaging/mqtt_client.h"
 #include "Infrastructure/Net/CellularLink.h"
 #include "Infrastructure/Net/LanZeroconfServer.h"
 #include "Infrastructure/Net/WifiLink.h"
+#include "Infrastructure/Net/sim_module.h"
 #include "Infrastructure/Ota/Mqttv5OtaService.h"
 #include "Infrastructure/Provisioning/ProvisioningPortals.h"
 #include "Infrastructure/Sensors/Esp32RawSensorReader.h"
@@ -58,11 +61,22 @@ static app::ConnectivityService            g_connectivity{g_wifi, g_cellular, g_
 
 static app::TelemetryService*              g_telemetry  = nullptr;
 static app::FirmwareController*            g_controller = nullptr;
+static volatile bool                       g_pendingFactoryUnlink = false;
+
+static void executeFactoryUnlinkToQuickPairing() {
+    Serial.println("[UNLINK] Ejecutando borrado de credenciales de cuenta y reinicio en Quick Pairing...");
+    resetConfig();
+    WiFi.disconnect(true, true);
+    delay(250);
+    ESP.restart();
+}
 
 // Flujo de emparejamiento de 2 etapas para GLP_Presure:
 // - Etapa 1: Quick Pairing (BLE GATT GLP-<DeviceID> + SmartConfig ESP-Touch)
 // - Etapa 2: SoftAP GLP-CONFIG-<DeviceID> (tras 2ª pulsación larga de 5s o fallback)
 static void runPairingWorkflow(bool isInitialBoot) {
+    probeSimProvisioningState();
+
     Serial.println("[PAIRING] Entrando en Etapa 1: Quick Pairing (BLE + SmartConfig)...");
     QuickPairingResult res = g_blePortal.runInteractive(
         isInitialBoot ? 120000UL : 180000UL,
@@ -97,6 +111,13 @@ void setup() {
 
     initConfig();
     g_button.init();
+
+    setMqttUnlinkVerifiedCallback([]() {
+        g_pendingFactoryUnlink = true;
+    });
+    g_lanServer.setUnlinkCallback([]() {
+        g_pendingFactoryUnlink = true;
+    });
 
     bool provisioned = g_configService.load();
     g_indicator.setSledOnline(g_configService.config().sledOnline);
@@ -140,6 +161,12 @@ void setup() {
 }
 
 void loop() {
+    if (g_pendingFactoryUnlink) {
+        g_pendingFactoryUnlink = false;
+        executeFactoryUnlinkToQuickPairing();
+        return;
+    }
+
     auto btnEv = g_button.update();
     if (btnEv == domain::ButtonEvent::LongPress) {
         Serial.println("[BTN] Pulsación larga (5.0s) detectada -> Iniciando Quick Pairing...");
