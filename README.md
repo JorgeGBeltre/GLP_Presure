@@ -62,13 +62,15 @@ Firmware for **remote measurement of Liquefied Petroleum Gas (LPG)** in horizont
 | **Clean Architecture** | 4 decoupled layers (`Domain`, `Application`, `Infrastructure`, `Presentation`) with `Domain` + `Application` 100% compilable and testable on the host |
 | **Pure LPG Physics & Thermodynamics** | Horizontal cylinder volume with hemispherical caps, saturated vapor pressure correlation, tilt compensation, and acoustic time-of-flight speed-of-sound estimation |
 | **Quick Pairing (BLE + SmartConfig)** | Simultaneous **BLE GATT (`GLP-<DeviceID>`)** and **Wi-Fi SmartConfig (`ESP-Touch / AirKiss`)** triggered immediately upon holding the button for `5.0 s` |
-| **SoftAP Portal (`GLP-CONFIG-<DeviceID>`)** | Stage 2 provisioning portal triggered by a 2nd `5.0 s` long press, supporting short-press cancellation and `GET /device` + `POST /ap` JSON endpoints |
-| **Complete GATT Callbacks & Unified JSON Frame** | Full read/write support across individual GATT characteristics (`port`, `tank_radius_cm`, `tank_length_cm`, `device_key`, `bind_token`) and unified JSON / `Key=Value` frames (`0x0014`) |
-| **Local LAN HTTP Server (`:8081`) + mDNS** | Local endpoints `/zeroconf/info`, `/zeroconf/signal_strength`, `/zeroconf/sled`, `/zeroconf/wifi`, `/zeroconf/config`, and `/zeroconf/ota_unlock` with `AES-128-CBC` (`MD5(deviceKey)`) support |
+| **SoftAP Portal (`GLP-CONFIG-<DeviceID>`)** | Stage 2 provisioning portal triggered by a 2nd `5.0 s` long press, disabling background STA `autoReconnect` (`WiFi.setAutoReconnect(false)`) for channel stability and supporting short-press cancellation plus `GET /device` + `POST /ap` JSON endpoints |
+| **Complete GATT Callbacks & Unified JSON Frame** | Full read/write support across GATT characteristics (`port`, `tank_radius_cm`, `tank_length_cm`, `device_key`, write-only secrets `apn_pass` / `mqtt_pass` / `ota_hmac_key` / `wifi_pass` / `bind_token`), DIS `0x180A` (`VESIS-GLP-S3`, `v1.0.1`), and bounded (`<= 2048` B) JSON / `Key=Value` frames (`0x0014`) |
+| **Local LAN HTTP Server (`:8081`) + mDNS** | Local endpoints `/zeroconf/info` (`GET`/`POST`), `/zeroconf/signal_strength`, `/zeroconf/sled`, `/zeroconf/wifi`, `/zeroconf/config`, `/zeroconf/unlink`, and `/zeroconf/ota_unlock` advertised via `_iot._tcp.local` mDNS + UDP `:48899` (`IOT_DISCOVER`) with `AES-128-CBC` (`MD5(deviceKey)`) support |
 | **Non-Blocking LED Indicator (`100 ms`)** | Multi-pattern state machine (`QuickPairing`, `CompatibleAp`, `Connecting`, `Operational` with `sledOnline`, `Anomaly`, `Error`) |
 | **Stationary Tank Drift Filter & Tamper Guard (`GTRDF` / `GTTOW` / `GTGEO`)** | Pins stationary LPG tank GPS coordinates within `30 m` (`GTRDF`) and flags unauthorized tank relocation (`tamper_moved`, `>= 50 m` displacement) |
-| **Seismic / Mechanical Shock & Cellular Jamming Guard (`GTCRA` / `GTJDC`)** | Detects mechanical impacts or seismic shocks (`|g - 1.0| >= 1.2g`) on the MPU6050 (`Mpu6050TiltProvider`), auto-resolves SIM7600 carrier APN from MCC/MNC (`apn.bin` table), and reports cellular RF jamming (`cellular_jamming`) in `security_guard` |
-| **Native MQTT 5.0 + Secure OTA** | Periodic telemetry, status envelopes, remote configuration updates, and `HMAC-SHA256` verified OTA updates |
+| **Seismic / Mechanical Shock & Cellular Jamming Guard (`GTCRA` / `GTJDC`)** | Detects mechanical impacts or seismic shocks (`|g - 1.0| >= 1.2g`) on the MPU6050 (`Mpu6050TiltProvider`), auto-resolves SIM7600 carrier APN from MCC/MNC (`apn.bin` table) with empty default `apn = ""`, and reports cellular RF jamming (`cellular_jamming`) in `security_guard` |
+| **Family Identity & Dynamic `credential_mode`** | Advertises 7-byte VESIS BLE Manufacturer Data (`0xFFFF` `'V','S'`, `device_code = 0x04`) and exposes `device_family = "glp_pressure"` with dynamic `credential_mode` (`"apn"` vs `"adopt_only"` when pre-pairing SIM7600 probe resolves carrier APN or Wi-Fi is active while unbound) for 1-tap account adoption |
+| **Account Binding & Cryptographic Unlink (`account_bound`)** | Persists `acct_bound` in NVS to preserve credentials across Wi-Fi/4G outages, while verified unlinking (`devices/{device_id}/unlink/command` + `unlink/ack`, MQTT 5.0 `0x87` `ACCOUNT_UNLINKED:<proof>`, or `POST /zeroconf/unlink` validated via constant-time `SHA256(deviceKey + ":UNLINK:" + deviceId)[0..31]`) resets into Quick Pairing |
+| **Native MQTT 5.0 + Secure OTA** | Powered by `ESP32_MQTTv5` (`v1.0.6`) and `MQTTOTAv5` (`v1.0.3`) with automatic plain TCP (`:1883`) vs TLS (`:8883`) selection, periodic telemetry, status envelopes, remote configuration updates, and `HMAC-SHA256` verified OTA updates |
 
 ---
 
@@ -97,7 +99,7 @@ Firmware for **remote measurement of Liquefied Petroleum Gas (LPG)** in horizont
 - `GpioIndicator` ([`GpioIndicator.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Indicator/GpioIndicator.h)):
   - `setSledOnline()`, `isSledOnline()`, `show()`, `update()`.
 - NVS Persistence ([`nvs_config.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Config/nvs_config.h), [`nvs_config.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Config/nvs_config.cpp), [`NvsConfigRepository.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Config/NvsConfigRepository.h)):
-  - `getDefaultChipId()`, `getDefaultDeviceKey()`, `saveSledOnlineNvs()`.
+  - `getDefaultChipId()`, `getDefaultDeviceKey()`, `saveSledOnlineNvs()`, `isAccountBound()`, `setCellularProvisioningSnapshot()`, `resolveDeviceCredentialMode()`, `computeUnlinkProofHex()`, and `verifyUnlinkProof()`.
 - Quick Pairing & SoftAP Provisioning ([`ble_provisioning.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Provisioning/ble_provisioning.h), [`ble_provisioning.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Provisioning/ble_provisioning.cpp), [`wifi_ap_provisioning.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Provisioning/wifi_ap_provisioning.h), [`wifi_ap_provisioning.cpp`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Provisioning/wifi_ap_provisioning.cpp), [`ProvisioningPortals.h`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Provisioning/ProvisioningPortals.h)):
   - `parseJsonCredentials()`, `parseKeyValueFrame()`, `parseFrame()`
   - `PortWriteCallback`, `FloatWriteCallback`, `DevKeyCallback`, `BindTokenCallback`, `FrameCallback`, `SaveCallback`
@@ -246,55 +248,56 @@ PROVISIONING
 ```
 
 ### BLE GATT Specification
-The BLE provisioning portal starts a GATT Server with the Service UUID: `12345678-1234-1234-1234-123456789abc`. 
-Clients can write configurations to the following characteristic UUIDs:
+The BLE provisioning portal starts a GATT Server with Service UUID `12345678-1234-1234-1234-123456789abc`, Standard Bluetooth Device Information Service `0x180A` (`"VESIS-GLP-S3"`, `"v1.0.1"`, `"ESP32-S3"`, `"VESIS"`), and 7-byte Manufacturer Specific Data `[0xFF, 0xFF, 'V', 'S', stateByte, 0x04, provFlags]` (`device_code = 0x04`, `device_family = "glp_pressure"`). 
+Clients can configure the device via the following characteristic UUIDs (secret fields are strictly write-only):
 
-| Characteristic UUID | Parameter | Type / Description |
+| Characteristic UUID | Parameter | Permissions / Type & Description |
 |---|---|---|
-| `aaaaaaaa-bbbb-cccc-dddd-000000000001` | `apn` | Cellular APN string |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000002` | `apn_user` | Cellular APN username |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000003` | `apn_pass` | Cellular APN password |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000004` | `mqtt_broker` | MQTT broker host string |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000005` | `mqtt_port` | MQTT port (sent as string) |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000006` | `mqtt_user` | MQTT username |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000007` | `mqtt_pass` | MQTT password |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000008` | `device_id` | Unique device identifier |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000009` | `tank_radius_cm`| Tank inner radius (cm) |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000010` | `tank_length_cm`| Tank inner length (cm) |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000011` | `ota_hmac_key` | HMAC security key |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000012` | `wifi_ssid` | WiFi SSID string |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000013` | `wifi_pass` | WiFi password string |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000014` | `frame_json` | Unified JSON or `Key=Value` frame (`READ` identity / `WRITE` config / `NOTIFY` ACK) |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000015` | `device_key` | Factory cryptographic device key (`apikey`) |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000016` | `bind_token` | User account claim token (`bind_token`) |
-| `aaaaaaaa-bbbb-cccc-dddd-000000000099` | `save` | Write "SAVE" or any value to persist config & reboot |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000001` | `apn` | `READ` / `WRITE` — Cellular APN string (default `""` for SIM7600 auto-APN) |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000002` | `apn_user` | `READ` / `WRITE` — Cellular APN username |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000003` | `apn_pass` | `WRITE` — Write-only cellular APN password |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000004` | `mqtt_broker` | `READ` / `WRITE` — MQTT broker host string |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000005` | `mqtt_port` | `READ` / `WRITE` — MQTT port (sent as string) |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000006` | `mqtt_user` | `READ` / `WRITE` — MQTT username |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000007` | `mqtt_pass` | `WRITE` — Write-only MQTT password |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000008` | `device_id` | `READ` / `WRITE` — Unique device identifier (defaults to 12-char eFuse `<ChipID>`) |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000009` | `tank_radius_cm`| `READ` / `WRITE` — Tank inner radius (cm) |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000010` | `tank_length_cm`| `READ` / `WRITE` — Tank inner length (cm) |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000011` | `ota_hmac_key` | `WRITE` — Write-only HMAC security key |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000012` | `wifi_ssid` | `READ` / `WRITE` — WiFi SSID string |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000013` | `wifi_pass` | `WRITE` — Write-only WiFi password string |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000014` | `frame_json` | `READ` / `WRITE` / `NOTIFY` — Unified JSON (`<= 2048` B chunk reassembly) or `Key=Value` frame (`READ` identity + `credential_mode` / `WRITE` config / `NOTIFY` ACK) |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000015` | `device_key` | `READ` — Factory cryptographic device key (`apikey`) |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000016` | `bind_token` | `WRITE` — Write-only user account claim token (`bind_token`) |
+| `aaaaaaaa-bbbb-cccc-dddd-000000000099` | `save` | `WRITE` / `READ` / `NOTIFY` — Write `"SAVE"` or any value to persist config & reboot |
 
 ---
 
 ## 2-Stage Pairing Workflow (Quick Pairing + SoftAP)
 
 1. **Stage 1 — Quick Pairing (`GLP-<DeviceID>` + SmartConfig)**:
-   - Triggered on unprovisioned first boot or immediately upon holding the physical button for **5.0 seconds** (without waiting for release).
+   - Triggered on unprovisioned first boot or immediately upon holding the physical button for **5.0 seconds** (without waiting for release). Before advertising, the firmware probes the SIM7600 modem (`setCellularProvisioningSnapshot`) so `0x0014` and BLE advertisement flags expose `credential_mode: "adopt_only"` (`adopt_ready: true`) when carrier APN or Wi-Fi is already active while `!account_bound`, or `"apn"` otherwise.
    - The status LED emits **2 short flashes + pause** (`100/100/100/700 ms`).
-   - The ESP32-S3 advertises the BLE GATT service `GLP-<DeviceID>` (accepting individual characteristics as well as unified JSON frames on `0x0014`) and listens for **Wi-Fi SmartConfig (`ESP-Touch / AirKiss`)** simultaneously.
+   - The ESP32-S3 advertises the BLE GATT service `GLP-<DeviceID>` (accepting individual characteristics, unified JSON frames on `0x0014`, and `adopt_only` account-binding bundles without overwriting stored Wi-Fi/APN) and listens for **Wi-Fi SmartConfig (`ESP-Touch / AirKiss`)** simultaneously.
 2. **Stage 2 — Compatible SoftAP Portal (`GLP-CONFIG-<DeviceID>`)**:
-   - Holding the button for another **5.0 seconds** while in Quick Pairing switches to the SoftAP `GLP-CONFIG-<DeviceID>` (password `glp12345`, IP `192.168.4.1`) with fast continuous blinking (`100 ms ON / 100 ms OFF`).
-   - Exposes both the pre-populated HTML form and the Compatible Pairing JSON endpoints (`GET /device`, `POST /ap`).
+   - Holding the button for another **5.0 seconds** while in Quick Pairing cleanly tears down NimBLE and switches to the SoftAP `GLP-CONFIG-<DeviceID>` (password `glp12345`, IP `192.168.4.1`, `WiFi.setAutoReconnect(false)`) with fast continuous blinking (`100 ms ON / 100 ms OFF`).
+   - Exposes both the pre-populated HTML form and the Compatible Pairing JSON endpoints (`GET /device`, `POST /ap` with `device_family = "glp_pressure"`, `device_code = 4`, `credential_mode`, `apn_auto_detected`, `adopt_ready`, and `account_bound`).
    - A **short press** cancels pairing mode and resumes normal operation.
 
 ---
 
 ## Local LAN HTTP Diagnostics (`/zeroconf/*`) & mDNS
 
-When the Wi-Fi link is active, [`LanZeroconfServer`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Net/LanZeroconfServer.h) listens on HTTP port **`8081`** and advertises `_ewelink._tcp.local` via mDNS:
+When the Wi-Fi link is active, [`LanZeroconfServer`](file:///c:/Users/Jorge/Music/interruptor%20wifi/GLP_Presure/src/Infrastructure/Net/LanZeroconfServer.h) listens on HTTP port **`8081`**, advertises `_iot._tcp.local` (`iot_<DeviceID>.local`, TXT `type=glp_pressure`) via mDNS, and answers local UDP broadcast discovery probes on port **`48899`** (`IOT_DISCOVER`):
 
-| HTTP `POST :8081` Endpoint | Description |
+| HTTP `:8081` Endpoint | Description |
 |---|---|
-| `/zeroconf/info` | Returns `deviceid`, `sledOnline`, cellular `apn`, tank geometry (`tankRadiusCm`, `tankLengthCm`, `tankHeightCm`, `propaneFraction`), and Wi-Fi `rssi` |
+| `/zeroconf/info` (`GET` / `POST`) | Returns `deviceid`, `device_family`, `credential_mode`, `account_bound`, `sledOnline`, cellular `apn`, tank geometry (`tankRadiusCm`, `tankLengthCm`, `tankHeightCm`, `propaneFraction`), and Wi-Fi `rssi` |
 | `/zeroconf/signal_strength` | Returns Wi-Fi signal strength (`signalStrength` in dBm) |
 | `/zeroconf/sled` | Enables or disables the online status LED (`{"sledOnline":"on"\|"off"}`) |
 | `/zeroconf/wifi` | Updates Wi-Fi credentials, cellular `apn` (`apn`, `apn_user`, `apn_pass`), and MQTT 5.0 broker in NVS |
 | `/zeroconf/config` | Updates cellular `apn`, MQTT 5.0 broker, and LPG tank geometry (`tank_radius_cm`, `tank_length_cm`, `tank_height_cm`, `propane_fraction`) in NVS |
+| `/zeroconf/unlink` | Cryptographically verified local account unlink (`unlink_proof = SHA256(deviceKey + ":UNLINK:" + deviceId)[0..31]`); wipes credentials, sets `account_bound = false`, and reboots into Stage 1 Quick Pairing |
 | `/zeroconf/ota_unlock` | Unlocks local OTA updates |
 
 ---
@@ -401,8 +404,8 @@ Every 30 seconds, the device publishes telemetric data to `glp/telemetria/{devic
     "ChipId": "A1B2C3D4E5F6",
     "ChipType": "ESP32-S3",
     "MacAddress": "XX:XX:XX:XX:XX:XX",
-    "FirmwareVersion": "1.0.0",
-    "DeviceId": "GLP-001",
+    "FirmwareVersion": "v1.0.1",
+    "DeviceId": "A1B2C3D4E5F6",
     "IMEI": "",
     "IMSI": "",
     "status": "connected",
@@ -511,8 +514,10 @@ Firmware updates are sent asynchronously via MQTT using the `MQTTOTAv5` library:
 | Topic | Direction | Content |
 |---|---|---|
 | `glp/telemetria/{device_id}` | Device → Broker | Telemetry payload JSON |
-| `glp/status/{device_id}` | Device → Broker | Will Message: `{"status":"offline","device_id":"..."}` |
+| `glp/status/{device_id}` | Device → Broker | Will Message (`WillDelay = 5` s): `{"status":"offline","device_id":"..."}` |
 | `glp/config/{device_id}` | Broker → Device | Live configuration adjustments JSON |
+| `devices/{device_id}/unlink/command` | Broker → Device | Cryptographically verified account unlink (`unlink_proof = SHA256(deviceKey + ":UNLINK:" + deviceId)[0..31]`); also enforced on MQTT 5.0 `CONNACK`/`DISCONNECT` `0x87` (`ACCOUNT_UNLINKED:<proof>`) |
+| `devices/{device_id}/unlink/ack` | Device → Broker | Confirmation JSON (`{"device_id":"...","status":"UNLINKED"}`) published prior to credential wipe |
 | `ota/{device_id}` | Broker → Device | Firmware in Base64 chunks |
 | `ota/{device_id}/progress` | Device → Broker | OTA progress update percent |
 | `ota/{device_id}/success` | Device → Broker | OTA successful installation report |
@@ -526,32 +531,34 @@ The persistent storage parameters are managed by the `Preferences` API under the
 
 | NVS Key | JSON Payload Key | C++ Domain Struct Field | Type | Default Value |
 |---|---|---|---|---|
-| `apn` | `apn` | `apn` | String | `"internet.claro.com.do"` |
+| `apn` | `apn` | `apn` | String | `""` (auto-resolved via SIM7600 MCC/MNC) |
 | `apn_user` | `apn_user` | `apnUser` | String | `""` |
 | `apn_pass` | `apn_pass` | `apnPass` | String | `""` |
-| `mqtt_broker` | `mqtt_broker` | `mqttBroker` | String | `"broker.hivemq.com"` |
-| `mqtt_port` | `mqtt_port` | `mqttPort` | Int | `1883` |
+| `mqtt_broker` | `mqtt_broker` | `mqttBroker` | String | `""` |
+| `mqtt_port` | `mqtt_port` | `mqttPort` | Int | `8883` (auto-selects plain TCP on `1883` vs TLS) |
 | `mqtt_user` | `mqtt_user` | `mqttUser` | String | `""` |
 | `mqtt_pass` | `mqtt_pass` | `mqttPass` | String | `""` |
 | `wifi_ssid` | `wifi_ssid` | `wifiSsid` | String | `""` |
 | `wifi_pass` | `wifi_pass` | `wifiPass` | String | `""` |
-| `device_id` | `device_id` | `deviceId` | String | `"GLP-001"` |
-| `radius` | `tank_radius_cm` | `tankRadiusCm` | Float | `45.0` |
-| `length` | `tank_length_cm` | `tankLengthCm` | Float | `120.0` |
-| `height` | `tank_height_cm` | `tankHeightCm` | Float | `0.0` |
+| `device_id` | `device_id` | `deviceId` | String | `<ChipID>` (12-char eFuse MAC hex) |
+| `tank_r` | `tank_radius_cm` | `tankRadiusCm` | Float | `50.0` |
+| `tank_l` | `tank_length_cm` | `tankLengthCm` | Float | `200.0` |
+| `tank_h` | `tank_height_cm` | `tankHeightCm` | Float | `2.0 * tankRadiusCm` |
 | `mount_off` | `mount_offset_cm`| `mountOffsetCm` | Float | `0.0` |
-| `p_slope` | `press_slope` | `calibration.pressSlope` | Float | `0.0` |
+| `p_slope` | `press_slope` | `calibration.pressSlope` | Float | `1.0` |
 | `p_offset` | `press_offset` | `calibration.pressOffset`| Float | `0.0` |
-| `t_rref` | `temp_r_ref` | `calibration.tempRRef` | Float | `1000.0` |
+| `t_rref` | `temp_r_ref` | `calibration.tempRRef` | Float | `10000.0` |
 | `t_vexc` | `temp_v_exc` | `calibration.tempVExc` | Float | `3.30` |
-| `t_offc` | `temp_offset_c` | `calibration.tempOffsetC`| Float | `0.0` |
-| `propane_fr` | `propane_fraction`| `propaneFraction` | Float | `1.0` |
-| `sensor_ax` | `sensor_axial_cm` | `sensorAxialCm` | Float | `0.0` |
+| `t_offset` | `temp_offset_c` | `calibration.tempOffsetC`| Float | `0.0` |
+| `prop_frac` | `propane_fraction`| `propaneFraction` | Float | `0.60` |
+| `s_axial` | `sensor_axial_cm` | `sensorAxialCm` | Float | `0.0` |
 | `ref_dist` | `ref_distance_cm` | `refDistanceCm` | Float | `0.0` |
 | `ota_hmac` | `ota_hmac_key` | `otaHmacKey` | String | `""` |
-| `dev_key` | `deviceKey` / `apikey` | `deviceKey` | String | `""` |
-| `bind_tok` | `bindToken` | `bindToken` | String | `""` |
+| `device_key` | `deviceKey` / `apikey` | `deviceKey` | String | Deterministic hardware UUID |
+| `bind_token` | `bindToken` | `bindToken` | String | `""` |
 | `sled_on` | `sledOnline` | `sledOnline` | Bool | `true` |
+| `acct_bound` | `account_bound` | `accountBound` | Bool | `false` |
+| `wifi_err` | `last_wifi_error` | `lastWifiError` | String | `""` |
 | `provisioned` | - | `provisioned` | Bool | `false` |
 
 ---
@@ -598,8 +605,8 @@ build_flags   = -std=gnu++17 -DBOARD_HAS_PSRAM -DTINY_GSM_MODEM_SIM7600 -I src
 ```
 
 **Dependencies** (`lib_deps`): `TinyGSM`, `TinyGPSPlus`,
-[`ESP32_MQTTv5`](https://github.com/JorgeGBeltre/ESP32_MQTTv5),
-[`MQTTOTAv5`](https://github.com/JorgeGBeltre/MQTTOTAv5), `ArduinoJson`,
+[`ESP32_MQTTv5`](https://github.com/JorgeGBeltre/ESP32_MQTTv5) (`v1.0.6`, linked via `file://../ESP32_MQTTv5`),
+[`MQTTOTAv5`](https://github.com/JorgeGBeltre/MQTTOTAv5) (`v1.0.3`, linked via `file://../MQTTOTAv5`), `ArduinoJson`,
 `NimBLE-Arduino`, `ESPAsyncWebServer`, `AsyncTCP`.
 
 ### Host tests (Domain + Application)
