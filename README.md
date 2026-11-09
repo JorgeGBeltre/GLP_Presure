@@ -70,7 +70,7 @@ Firmware for **remote measurement of Liquefied Petroleum Gas (LPG)** in horizont
 | **Seismic / Mechanical Shock & Cellular Jamming Guard (`GTCRA` / `GTJDC`)** | Detects mechanical impacts or seismic shocks (`|g - 1.0| >= 1.2g`) on the MPU6050 (`Mpu6050TiltProvider`), auto-resolves SIM7600 carrier APN from MCC/MNC (`apn.bin` table) with empty default `apn = ""`, and reports cellular RF jamming (`cellular_jamming`) in `security_guard` |
 | **Family Identity & Dynamic `credential_mode`** | Advertises 7-byte VESIS BLE Manufacturer Data (`0xFFFF` `'V','S'`, `device_code = 0x04`) and exposes `device_family = "glp_pressure"` with dynamic `credential_mode` (`"apn"` vs `"adopt_only"` when pre-pairing SIM7600 probe resolves carrier APN or Wi-Fi is active while unbound) for 1-tap account adoption |
 | **Account Binding & Cryptographic Unlink (`account_bound`)** | Persists `acct_bound` in NVS to preserve credentials across Wi-Fi/4G outages, while verified unlinking (`devices/{device_id}/unlink/command` + `unlink/ack`, MQTT 5.0 `0x87` `ACCOUNT_UNLINKED:<proof>`, or `POST /zeroconf/unlink` validated via constant-time `SHA256(deviceKey + ":UNLINK:" + deviceId)[0..31]`) resets into Quick Pairing |
-| **Native MQTT 5.0 + Secure OTA** | Powered by `ESP32_MQTTv5` (`v1.0.6`) and `MQTTOTAv5` (`v1.0.3`) with automatic plain TCP (`:1883`) vs TLS (`:8883`) selection, periodic telemetry, status envelopes, remote configuration updates, and `HMAC-SHA256` verified OTA updates |
+| **Native MQTT 5.0 + Secure OTA** | Powered by `ESP32_MQTTv5` (`v1.0.7`) and `MQTTOTAv5` (`v1.0.3`) with automatic plain TCP (`:1883`) vs TLS (`:8883`) selection, strict packet/property bounds validation, periodic telemetry, status envelopes, remote configuration updates, and `HMAC-SHA256` verified OTA updates |
 
 ---
 
@@ -605,7 +605,7 @@ build_flags   = -std=gnu++17 -DBOARD_HAS_PSRAM -DTINY_GSM_MODEM_SIM7600 -I src
 ```
 
 **Dependencies** (`lib_deps`): `TinyGSM`, `TinyGPSPlus`,
-[`ESP32_MQTTv5`](https://github.com/JorgeGBeltre/ESP32_MQTTv5) (`v1.0.6`),
+[`ESP32_MQTTv5`](https://github.com/JorgeGBeltre/ESP32_MQTTv5) (`v1.0.7`),
 [`MQTTOTAv5`](https://github.com/JorgeGBeltre/MQTTOTAv5) (`v1.0.3`), `ArduinoJson`,
 `NimBLE-Arduino`, `ESPAsyncWebServer`, `AsyncTCP`.
 
