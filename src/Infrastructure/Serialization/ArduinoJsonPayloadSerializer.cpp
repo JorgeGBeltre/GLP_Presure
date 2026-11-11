@@ -50,12 +50,30 @@ std::string ArduinoJsonPayloadSerializer::telemetry(const app::TelemetrySnapshot
     tank["length_cm"] = s.tank.lengthMm / 10.0f;
 
     JsonObject gps = d.createNestedObject("gps");
-    gps["lat"]            = s.gps.latitude;
-    gps["lng"]            = s.gps.longitude;
-    gps["valid"]          = s.gps.valid;
-    gps["drift_filtered"] = s.gps.driftFiltered;
-    gps["displacement_m"] = s.gps.displacementM;
-    gps["tamper_moved"]   = s.gps.tamperMoved;
+    gps["lat"]                = s.gps.latitude;
+    gps["lng"]                = s.gps.longitude;
+    gps["valid"]              = s.gps.valid;
+    gps["positioning_source"] = s.gps.valid
+                                    ? (s.gps.isLbsFallback ? "LBS" : "GPS")
+                                    : (s.gps.lbsValid ? "LBS_CELL_ID" : "NONE");
+    gps["lbs_fallback"]       = s.gps.isLbsFallback;
+    gps["drift_filtered"]     = s.gps.driftFiltered;
+    gps["displacement_m"]     = s.gps.displacementM;
+    gps["tamper_moved"]       = s.gps.tamperMoved;
+    if (s.gps.lbsValid) {
+        JsonObject lbs = gps.createNestedObject("lbs");
+        lbs["mcc"]     = s.gps.mcc;
+        lbs["mnc"]     = s.gps.mnc;
+        lbs["lac"]     = s.gps.lac;
+        lbs["cell_id"] = s.gps.cellId;
+        if (s.gps.lbsAccuracyM > 0) {
+            lbs["accuracy_m"] = s.gps.lbsAccuracyM;
+        }
+        char cellKey[48];
+        snprintf(cellKey, sizeof(cellKey), "%d-%d-%u-%u",
+                 s.gps.mcc, s.gps.mnc, (unsigned)s.gps.lac, (unsigned)s.gps.cellId);
+        lbs["cell_key"] = cellKey;
+    }
 
     d["rssi"]      = s.metrics.rssi;
     d["free_heap"] = s.metrics.freeHeap;

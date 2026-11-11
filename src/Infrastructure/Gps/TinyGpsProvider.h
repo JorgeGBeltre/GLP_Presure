@@ -3,13 +3,15 @@
 #include <cmath>
 #include "Domain/Interfaces/IGpsProvider.h"
 #include "Infrastructure/Gps/gps_module.h"   // driver existente (initGPS, readGPS, getLatitude, ...)
+#include "Infrastructure/Net/sim_module.h"   // LBS (Cell ID + estación base SIM7600)
 
 namespace glp::infra {
 
 /**
  * IGpsProvider sobre el driver procedural gps/gps_module (TinyGPS++) enriquecido
- * con filtro de deriva estática (GTRDF, radio 30 m) y detección de movimiento/robo
- * del tanque estacionario (GTTOW / GTGEO, umbral 50 m).
+ * con filtro de deriva estática (GTRDF, radio 30 m), posicionamiento celular LBS
+ * (Cell ID + fallback AT+CLBS) y detección de movimiento/robo del tanque
+ * estacionario (GTTOW / GTGEO, umbral 50 m).
  */
 class TinyGpsProvider : public domain::IGpsProvider {
 public:
@@ -20,7 +22,24 @@ public:
         domain::GpsFix f;
         f.valid     = isGPSValid();
         f.timestamp = getGPSTimestamp().c_str();
+
+        const SimLbsSnapshot lbs = getSimLbsSnapshot(!f.valid);
+        f.lbsValid     = lbs.hasCellId || lbs.hasCoordinates;
+        f.mcc          = lbs.mcc;
+        f.mnc          = lbs.mnc;
+        f.lac          = lbs.lac;
+        f.cellId       = lbs.cellId;
+        f.lbsAccuracyM = lbs.accuracyM;
+
         if (!f.valid) {
+            if (lbs.hasCoordinates) {
+                f.valid         = true;
+                f.isLbsFallback = true;
+                f.latitude      = lbs.latitude;
+                f.longitude     = lbs.longitude;
+                f.driftFiltered = false;
+                f.tamperMoved   = false;
+            }
             return f;
         }
 

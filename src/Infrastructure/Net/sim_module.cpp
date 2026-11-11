@@ -2,6 +2,10 @@
 #include <TinyGsmClient.h>
 #include "sim_module.h"
 #include "Infrastructure/Config/nvs_config.h"
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
 
 #include "Infrastructure/Config/BoardConfig.h"
 
@@ -50,6 +54,31 @@ String autoResolveApnFromImsi(const String& imsi) {
     }
     return "";
 }
+
+bool parseRegLacCellId(const String& regResp, uint32_t& outLac, uint32_t& outCellId) {
+    int q1 = regResp.indexOf('"');
+    if (q1 == -1) return false;
+    int q2 = regResp.indexOf('"', q1 + 1);
+    if (q2 == -1) return false;
+    int q3 = regResp.indexOf('"', q2 + 1);
+    if (q3 == -1) return false;
+    int q4 = regResp.indexOf('"', q3 + 1);
+    if (q4 == -1) return false;
+
+    String lacHex = regResp.substring(q1 + 1, q2);
+    String ciHex  = regResp.substring(q3 + 1, q4);
+    lacHex.trim();
+    ciHex.trim();
+    if (lacHex.length() == 0 || ciHex.length() == 0) return false;
+
+    uint32_t lac = static_cast<uint32_t>(std::strtoul(lacHex.c_str(), nullptr, 16));
+    uint32_t ci  = static_cast<uint32_t>(std::strtoul(ciHex.c_str(), nullptr, 16));
+    if (ci == 0 || ci == 0xFFFFFFFFUL) return false;
+
+    outLac = lac;
+    outCellId = ci;
+    return true;
+}
 } // namespace
 
 // Bridge wraps TinyGsmClient to present WiFiClient interface for ESP32_MQTTv5
@@ -63,6 +92,9 @@ static int _rssi = -999;
 static int _lastValidRssi = 0;
 static bool _jammingDetected = false;
 static std::string _resolvedApn;
+static SimLbsSnapshot _cachedLbs;
+static unsigned long _lastLbsPollMs = 0;
+static bool _modemInitialized = false;
 
 static void powerOnSIM() {
     pinMode(SIM_PWR_PIN, OUTPUT);
@@ -135,6 +167,10 @@ void probeSimProvisioningState() {
     if (!detectedApn.isEmpty()) {
         _resolvedApn = detectedApn.c_str();
     }
+    _modemInitialized = true;
+    queryModemLine("AT+CREG=2", 400);
+    queryModemLine("AT+CGREG=2", 400);
+    queryModemLine("AT+CEREG=2", 400);
     setCellularProvisioningSnapshot(simReady, autoApn, gprsConn, _resolvedApn.c_str());
     Serial.printf("[SIM] Sondeo celular GLP: SIM=%d, autoAPN=%d (%s), LTE=%d\n",
                   simReady ? 1 : 0, autoApn ? 1 : 0, _resolvedApn.c_str(), gprsConn ? 1 : 0);
@@ -193,11 +229,127 @@ bool initSIM() {
     }
 
     Serial.println("[SIM] GPRS/LTE connected!");
+    _modemInitialized = true;
+    queryModemLine("AT+CREG=2", 400);
+    queryModemLine("AT+CGREG=2", 400);
+    queryModemLine("AT+CEREG=2", 400);
     _rssi = modem.getSignalQuality();
     if (_rssi > 0 && _rssi != 99) _lastValidRssi = _rssi;
     _jammingDetected = false;
+    getSimLbsSnapshot(true);
     Serial.printf("[SIM] Signal quality: %d (APN: %s)\n", _rssi, _resolvedApn.c_str());
     return true;
+}
+
+SimLbsSnapshot getSimLbsSnapshot(bool requestCoordinatesIfNoGps) {
+    if (!_modemInitialized) {
+        return _cachedLbs;
+    }
+
+    const unsigned long now = millis();
+    if (_lastLbsPollMs != 0 && (now - _lastLbsPollMs < 25000UL) &&
+        (!requestCoordinatesIfNoGps || _cachedLbs.hasCoordinates)) {
+        return _cachedLbs;
+    }
+    _lastLbsPollMs = now;
+
+    if (_cachedLbs.mcc == 0) {
+        String imsi = modem.getIMSI();
+        if (imsi.length() >= 5) {
+            _cachedLbs.mcc = imsi.substring(0, 3).toInt();
+            int mncLen = 2;
+            for (size_t i = 0; i < sizeof(kCarrierApnTable) / sizeof(kCarrierApnTable[0]); ++i) {
+                if (imsi.startsWith(kCarrierApnTable[i].mccMncPrefix)) {
+                    int pLen = static_cast<int>(std::strlen(kCarrierApnTable[i].mccMncPrefix));
+                    if (pLen >= 5) mncLen = pLen - 3;
+                    break;
+                }
+            }
+            if ((int)imsi.length() >= 3 + mncLen) {
+                _cachedLbs.mnc = imsi.substring(3, 3 + mncLen).toInt();
+            }
+        }
+    }
+
+    String cpsi = queryModemLine("AT+CPSI?", 700);
+    int cpsiIdx = cpsi.indexOf("+CPSI:");
+    if (cpsiIdx >= 0) {
+        int lineEnd = cpsi.indexOf('\n', cpsiIdx);
+        String line = (lineEnd >= 0) ? cpsi.substring(cpsiIdx + 6, lineEnd) : cpsi.substring(cpsiIdx + 6);
+        line.trim();
+        std::vector<String> tokens;
+        int start = 0;
+        while (start <= (int)line.length()) {
+            int comma = line.indexOf(',', start);
+            if (comma == -1) {
+                tokens.push_back(line.substring(start));
+                break;
+            }
+            tokens.push_back(line.substring(start, comma));
+            start = comma + 1;
+        }
+        if (tokens.size() >= 5) {
+            int dash = tokens[2].indexOf('-');
+            if (dash > 0) {
+                int parsedMcc = tokens[2].substring(0, dash).toInt();
+                int parsedMnc = tokens[2].substring(dash + 1).toInt();
+                if (parsedMcc > 0) {
+                    _cachedLbs.mcc = parsedMcc;
+                    _cachedLbs.mnc = parsedMnc;
+                }
+            }
+            String lacTok = tokens[3];
+            lacTok.trim();
+            uint32_t parsedLac = (lacTok.startsWith("0x") || lacTok.startsWith("0X"))
+                                     ? static_cast<uint32_t>(std::strtoul(lacTok.c_str() + 2, nullptr, 16))
+                                     : static_cast<uint32_t>(std::strtoul(lacTok.c_str(), nullptr, 10));
+            uint32_t parsedCi = static_cast<uint32_t>(std::strtoul(tokens[4].c_str(), nullptr, 10));
+            if (parsedCi > 0) {
+                _cachedLbs.lac = parsedLac;
+                _cachedLbs.cellId = parsedCi;
+            }
+        }
+    }
+
+    if (_cachedLbs.cellId == 0) {
+        uint32_t regLac = 0, regCi = 0;
+        if (parseRegLacCellId(queryModemLine("AT+CEREG?", 600), regLac, regCi) ||
+            parseRegLacCellId(queryModemLine("AT+CGREG?", 600), regLac, regCi) ||
+            parseRegLacCellId(queryModemLine("AT+CREG?", 600), regLac, regCi)) {
+            _cachedLbs.lac = regLac;
+            _cachedLbs.cellId = regCi;
+        }
+    }
+
+    _cachedLbs.hasCellId = (_cachedLbs.mcc > 0 && _cachedLbs.cellId > 0);
+
+    if (requestCoordinatesIfNoGps && modem.isGprsConnected()) {
+        String clbs = queryModemLine("AT+CLBS=1,1", 2500);
+        int clbsIdx = clbs.indexOf("+CLBS:");
+        if (clbsIdx >= 0) {
+            int lineEnd = clbs.indexOf('\n', clbsIdx);
+            String line = (lineEnd >= 0) ? clbs.substring(clbsIdx + 6, lineEnd) : clbs.substring(clbsIdx + 6);
+            line.trim();
+            int c1 = line.indexOf(',');
+            int c2 = (c1 != -1) ? line.indexOf(',', c1 + 1) : -1;
+            int c3 = (c2 != -1) ? line.indexOf(',', c2 + 1) : -1;
+            if (c1 != -1 && c2 != -1) {
+                int code = line.substring(0, c1).toInt();
+                double lat = line.substring(c1 + 1, c2).toDouble();
+                double lon = (c3 != -1) ? line.substring(c2 + 1, c3).toDouble()
+                                        : line.substring(c2 + 1).toDouble();
+                int acc = (c3 != -1) ? line.substring(c3 + 1).toInt() : 500;
+                if (code == 0 && (std::fabs(lat) > 0.0001 || std::fabs(lon) > 0.0001)) {
+                    _cachedLbs.latitude = lat;
+                    _cachedLbs.longitude = lon;
+                    _cachedLbs.accuracyM = (acc > 0) ? acc : 500;
+                    _cachedLbs.hasCoordinates = true;
+                }
+            }
+        }
+    }
+
+    return _cachedLbs;
 }
 
 bool isSimConnected() {
