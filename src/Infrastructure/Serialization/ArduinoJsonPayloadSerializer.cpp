@@ -75,9 +75,17 @@ std::string ArduinoJsonPayloadSerializer::telemetry(const app::TelemetrySnapshot
         lbs["cell_key"] = cellKey;
     }
 
-    d["rssi"]      = s.metrics.rssi;
-    d["free_heap"] = s.metrics.freeHeap;
-    d["uptime"]    = s.metrics.uptime;
+    d["rssi"]               = s.metrics.rssi;
+    d["free_heap"]          = s.metrics.freeHeap;
+    d["uptime"]             = s.metrics.uptime;
+    d["boot_count"]         = s.metrics.bootCount;
+    d["unexpected_reboots"] = s.metrics.unexpectedReboots;
+    d["wdt_offences"]       = s.metrics.wdtOffences;
+    d["modem_recoveries"]   = s.metrics.modemRecoveries;
+    d["offline_queued"]     = s.metrics.queuedMessages;
+    if (!s.metrics.resetReason.empty()) {
+        d["reset_reason"]   = s.metrics.resetReason;
+    }
 
     JsonObject health = d.createNestedObject("health");
     health["ultrasonic"]  = s.health.ultrasonic;

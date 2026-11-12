@@ -2,6 +2,8 @@
 #include <TinyGsmClient.h>
 #include "sim_module.h"
 #include "Infrastructure/Config/nvs_config.h"
+#include "Infrastructure/Ota/ota_manager.h"
+#include "Infrastructure/System/EspSystemControl.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -95,13 +97,35 @@ static std::string _resolvedApn;
 static SimLbsSnapshot _cachedLbs;
 static unsigned long _lastLbsPollMs = 0;
 static bool _modemInitialized = false;
+static bool _powerBootstrapped = false;
+static uint8_t _consecutiveAtFailures = 0;
+static uint16_t _modemRecoveries = 0;
+static unsigned long _lastModemRecoveryMs = 0;
 
 static void powerOnSIM() {
     pinMode(SIM_PWR_PIN, OUTPUT);
     digitalWrite(SIM_PWR_PIN, HIGH);
+    glp::infra::EspSystemControl::heartbeat();
     delay(1500);
     digitalWrite(SIM_PWR_PIN, LOW);
+    glp::infra::EspSystemControl::heartbeat();
     delay(3000);
+    glp::infra::EspSystemControl::heartbeat();
+}
+
+static bool recoverSimModemIfAllowed() {
+    if (otaInProgress()) return false; // Patrón VBU3-116: no reiniciar módem durante OTA activa
+    const unsigned long now = millis();
+    if (_lastModemRecoveryMs != 0 && (now - _lastModemRecoveryMs < 300000UL)) {
+        return false; // Enfriamiento de 5 min entre ciclos de hardware
+    }
+    _lastModemRecoveryMs = now;
+    _consecutiveAtFailures = 0;
+    _modemRecoveries++;
+    Serial.printf("[SIM] Auto-recuperacion de modem SIM7600 no responsivo (#%u)...\n",
+                  (unsigned)_modemRecoveries);
+    powerOnSIM();
+    return true;
 }
 
 static String queryModemLine(const char* cmd, unsigned long timeoutMs) {
@@ -177,13 +201,27 @@ void probeSimProvisioningState() {
 }
 
 bool initSIM() {
+    if (otaInProgress()) return false;
+    glp::infra::EspSystemControl::heartbeat();
     simSerial.begin(SIM_BAUD, SERIAL_8N1, SIM_RX_PIN, SIM_TX_PIN);
     Serial.println("[SIM] Initializing SIM7600 (4G/LTE)...");
 
     if (!modem.testAT(600)) {
-        powerOnSIM();
+        if (!_powerBootstrapped) {
+            _powerBootstrapped = true;
+            powerOnSIM();
+        } else {
+            _consecutiveAtFailures++;
+            if (_consecutiveAtFailures >= 2) {
+                recoverSimModemIfAllowed();
+            }
+        }
+    } else {
+        _consecutiveAtFailures = 0;
+        _powerBootstrapped = true;
     }
 
+    glp::infra::EspSystemControl::heartbeat();
     if (!modem.init()) {
         Serial.println("[SIM] Modem init FAILED");
         setCellularProvisioningSnapshot(false, false, false, "");
@@ -203,29 +241,28 @@ bool initSIM() {
     _resolvedApn = targetApn.c_str();
     setCellularProvisioningSnapshot(imsi.length() >= 5, autoApn, false, _resolvedApn.c_str());
 
-    // Backoff reconnect: up to 5 retries with exponential delay (fallback to IMSI APN on retry)
-    int  retry   = 0;
-    long delayMs = 2000;
+    // Intento acotado por tick (<= 2 intentos rápidos); el backoff exponencial no bloqueante
+    // lo gobierna FirmwareController::runConnecting() sin bloquear sensores ni botón.
+    int retry = 0;
     while (!modem.gprsConnect(targetApn.c_str(),
                               config.apn_user.c_str(),
                               config.apn_pass.c_str())) {
+        glp::infra::EspSystemControl::heartbeat();
         retry++;
-        if (retry == 2 && imsi.length() >= 5) {
-            String autoApn = autoResolveApnFromImsi(imsi);
-            if (!autoApn.isEmpty() && autoApn != targetApn) {
+        if (retry == 1 && imsi.length() >= 5) {
+            String fallbackApn = autoResolveApnFromImsi(imsi);
+            if (!fallbackApn.isEmpty() && fallbackApn != targetApn) {
                 Serial.printf("[SIM] Auto-resolving carrier APN from MCC/MNC (%s): %s\n",
-                              imsi.substring(0, 5).c_str(), autoApn.c_str());
-                targetApn = autoApn;
+                              imsi.substring(0, 5).c_str(), fallbackApn.c_str());
+                targetApn = fallbackApn;
                 _resolvedApn = targetApn.c_str();
             }
         }
-        if (retry > 5) {
-            Serial.println("[SIM] GPRS connect FAILED after 5 retries");
+        if (retry >= 2) {
+            Serial.println("[SIM] GPRS connect deferred to controller backoff");
             return false;
         }
-        Serial.printf("[SIM] GPRS attempt %d failed — retrying in %ldms\n", retry, delayMs);
-        delay(delayMs);
-        delayMs = min(delayMs * 2, 60000L);
+        delay(1200);
     }
 
     Serial.println("[SIM] GPRS/LTE connected!");
@@ -381,4 +418,8 @@ std::string getSimResolvedApn() {
 std::string getSimLocalIp() {
     if (!modem.isGprsConnected()) return "0.0.0.0";
     return std::string(modem.localIP().toString().c_str());
+}
+
+uint16_t getSimModemRecoveries() {
+    return _modemRecoveries;
 }

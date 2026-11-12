@@ -68,6 +68,7 @@ static void executeFactoryUnlinkToQuickPairing() {
     resetConfig();
     WiFi.disconnect(true, true);
     delay(250);
+    infra::EspSystemControl::markGracefulReboot();
     ESP.restart();
 }
 
@@ -75,6 +76,7 @@ static void executeFactoryUnlinkToQuickPairing() {
 // - Etapa 1: Quick Pairing (BLE GATT GLP-<DeviceID> + SmartConfig ESP-Touch)
 // - Etapa 2: SoftAP GLP-CONFIG-<DeviceID> (tras 2ª pulsación larga de 5s o fallback)
 static void runPairingWorkflow(bool isInitialBoot) {
+    infra::EspSystemControl::setWatchdogPaused(true);
     probeSimProvisioningState();
 
     Serial.println("[PAIRING] Entrando en Etapa 1: Quick Pairing (BLE + SmartConfig)...");
@@ -87,12 +89,14 @@ static void runPairingWorkflow(bool isInitialBoot) {
     if (res == QuickPairingResult::Provisioned) {
         Serial.println("[PAIRING] Credenciales recibidas en Quick Pairing. Reiniciando...");
         delay(400);
+        infra::EspSystemControl::markGracefulReboot();
         ESP.restart();
         return;
     }
 
     if (res == QuickPairingResult::CancelledByButton) {
         Serial.println("[PAIRING] Emparejamiento cancelado por pulsación corta.");
+        infra::EspSystemControl::setWatchdogPaused(false);
         return;
     }
 
@@ -100,14 +104,24 @@ static void runPairingWorkflow(bool isInitialBoot) {
         Serial.println("[PAIRING] Entrando en Etapa 2: SoftAP GLP-CONFIG-<DeviceID>...");
         if (g_apPortal.runInteractive(300000UL, g_indicator, g_button)) {
             delay(400);
+            infra::EspSystemControl::markGracefulReboot();
             ESP.restart();
+            return;
         }
     }
+    infra::EspSystemControl::setWatchdogPaused(false);
 }
 
 void setup() {
     Serial.begin(115200);
     delay(200);
+
+    infra::EspSystemControl::initBootAndWatchdog();
+    Serial.printf("[BOOT] GLP boot #%lu (unexpected=%lu, wdt=%u, reason=%s)\n",
+                  (unsigned long)infra::EspSystemControl::bootCount(),
+                  (unsigned long)infra::EspSystemControl::unexpectedReboots(),
+                  (unsigned)infra::EspSystemControl::wdtOffences(),
+                  infra::EspSystemControl::resetReason());
 
     initConfig();
     g_button.init();
@@ -161,6 +175,8 @@ void setup() {
 }
 
 void loop() {
+    infra::EspSystemControl::heartbeat();
+
     if (g_pendingFactoryUnlink) {
         g_pendingFactoryUnlink = false;
         executeFactoryUnlinkToQuickPairing();

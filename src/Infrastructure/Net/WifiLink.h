@@ -5,6 +5,7 @@
 
 #include "Domain/Entities/DeviceConfig.h"
 #include "Domain/Interfaces/INetworkLink.h"
+#include "Infrastructure/System/EspSystemControl.h"
 
 namespace glp::infra {
 
@@ -21,11 +22,13 @@ public:
 
     bool connect() override {
         if (!isConfigured()) return false;
+        if (WiFi.status() == WL_CONNECTED) return true;
         WiFi.mode(WIFI_STA);
         WiFi.begin(cfg_.wifiSsid.c_str(), cfg_.wifiPass.c_str());
         const unsigned long start = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
-            delay(200);
+        while (WiFi.status() != WL_CONNECTED && millis() - start < 3500UL) {
+            EspSystemControl::heartbeat();
+            delay(100);
         }
         return WiFi.status() == WL_CONNECTED;
     }

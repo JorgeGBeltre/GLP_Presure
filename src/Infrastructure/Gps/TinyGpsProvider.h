@@ -60,12 +60,19 @@ public:
             f.latitude      = anchorLat_;
             f.longitude     = anchorLon_;
             f.driftFiltered = true;
+            tamperLatched_  = false;
             f.tamperMoved   = false;
         } else {
             f.latitude      = rawLat;
             f.longitude     = rawLon;
             f.driftFiltered = false;
-            f.tamperMoved   = (distM >= 50.0f);
+            // Histéresis de salida (patrón LMU-LTE-1041 GeozoneService): activa >=50 m, limpia <35 m
+            if (distM >= 50.0f) {
+                tamperLatched_ = true;
+            } else if (distM < 35.0f) {
+                tamperLatched_ = false;
+            }
+            f.tamperMoved   = tamperLatched_;
         }
         return f;
     }
@@ -83,9 +90,10 @@ private:
         return static_cast<float>(kEarthRadiusM * c);
     }
 
-    bool   hasAnchor_ = false;
-    double anchorLat_ = 0.0;
-    double anchorLon_ = 0.0;
+    bool   hasAnchor_     = false;
+    bool   tamperLatched_ = false;
+    double anchorLat_     = 0.0;
+    double anchorLon_     = 0.0;
 };
 
 } // namespace glp::infra

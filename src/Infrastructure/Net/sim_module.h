@@ -23,6 +23,7 @@ int  getSignalRSSI();
 bool isSimJammingDetected();
 std::string getSimResolvedApn();
 std::string getSimLocalIp();   // IP local del enlace GPRS/LTE ("0.0.0.0" si no hay)
+uint16_t getSimModemRecoveries();
 SimLbsSnapshot getSimLbsSnapshot(bool requestCoordinatesIfNoGps = false);
 
 // Returns the WiFiClient-compatible bridge over TinyGsmClient

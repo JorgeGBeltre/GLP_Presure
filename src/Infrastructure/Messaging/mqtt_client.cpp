@@ -41,7 +41,7 @@ void initMQTT() {
     mqtt.begin(glp::infra::getActiveNetworkClient(), config.mqtt_broker.c_str(), config.mqtt_port);
     mqtt.setKeepAlive(60);
     mqtt.setCleanStart(false);
-    mqtt.setAutoReconnect(true, 1000, 60000);
+    mqtt.setAutoReconnect(false); // Reconexión exponencial centralizada en FirmwareController
     mqtt.setSessionExpiry(3600);
     mqtt.setBufferSize(4096);
 
@@ -119,6 +119,11 @@ void initMQTT() {
 }
 
 void connectMQTT() {
+    if (!hasValidBrokerCredentials()) {
+        return;
+    }
+    // Re-enlazar el cliente activo (WiFiClient <-> TinyGsmClientBridge) en cada failover
+    mqtt.begin(glp::infra::getActiveNetworkClient(), config.mqtt_broker.c_str(), config.mqtt_port);
     Serial.printf("[MQTT] Connecting to %s:%d as %s...\n",
                   config.mqtt_broker.c_str(), config.mqtt_port, config.device_id.c_str());
     mqtt.connect(config.device_id, config.mqtt_user, config.mqtt_pass);

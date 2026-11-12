@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <string>
 
@@ -23,6 +24,7 @@ public:
     virtual bool publish(const std::string& topic, const std::string& payload) = 0;
     virtual void subscribe(const std::string& topic) = 0;
     virtual void onMessage(MessageHandler handler) = 0;
+    virtual size_t queuedCount() const { return 0; }
 
     /** Bombea el cliente MQTT (no bloqueante). Llamar cada loop. */
     virtual void loop() = 0;

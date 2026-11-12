@@ -6,7 +6,7 @@
 namespace glp::app {
 
 bool TelemetryService::suppressed() {
-    return !conn_.transport().isConnected() || ota_.isInProgress();
+    return ota_.isInProgress();
 }
 
 void TelemetryService::loop() {
@@ -37,6 +37,13 @@ bool TelemetryService::publishTelemetry() {
     const float frac = config_.propaneFraction();
     consumption_.update(est.volumeLiters, clock_.nowMs());
 
+    const bool online = conn_.transport().isConnected();
+    const bool criticalAlert = est.anomaly || fix.tamperMoved ||
+                               tilt.seismicImpactDetected || conn_.isCellularJammingDetected();
+    if (!online && !criticalAlert) {
+        return false; // Mantiene Kalman/consumo vivos sin llenar la cola con telemetría rutinaria
+    }
+
     TelemetrySnapshot snap;
     // --- Envelope (cabecera "Device" + "Timestamp") ---
     snap.ctx.identity         = device_.identity();
@@ -53,6 +60,7 @@ bool TelemetryService::publishTelemetry() {
     snap.tilt     = tilt;
     snap.metrics  = device_.metrics();
     snap.metrics.rssi = conn_.activeRssi();   // rssi del enlace activo
+    snap.metrics.queuedMessages = static_cast<uint16_t>(conn_.transport().queuedCount());
     snap.health           = domain::SensorHealth::evaluate(est, raw, frac);
     snap.consumptionLpd   = consumption_.litersPerDay();
     snap.remainingDays    = consumption_.remainingDays(est.volumeLiters);

@@ -5,7 +5,8 @@
 #include <esp_mac.h>
 
 #include "Application/Version.h"
-#include "Infrastructure/Net/sim_module.h"   // getSignalRSSI()
+#include "Infrastructure/Net/sim_module.h"   // getSignalRSSI(), getSimModemRecoveries()
+#include "Infrastructure/System/EspSystemControl.h"
 
 namespace glp::infra {
 
@@ -34,9 +35,14 @@ domain::DeviceIdentity EspDeviceRepository::identity() {
 
 domain::SystemMetrics EspDeviceRepository::metrics() {
     domain::SystemMetrics m;
-    m.rssi     = WiFi.RSSI();
-    m.freeHeap = ESP.getFreeHeap();
-    m.uptime   = millis();
+    m.rssi              = WiFi.RSSI();
+    m.freeHeap          = ESP.getFreeHeap();
+    m.uptime            = millis();
+    m.bootCount         = EspSystemControl::bootCount();
+    m.unexpectedReboots = EspSystemControl::unexpectedReboots();
+    m.wdtOffences       = EspSystemControl::wdtOffences();
+    m.modemRecoveries   = getSimModemRecoveries();
+    m.resetReason       = EspSystemControl::resetReason();
     return m;
 }
 

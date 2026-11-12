@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "Application/Services/ConfigService.h"
@@ -68,7 +69,10 @@ private:
     domain::IClock&               clock_;
     domain::ILogger&              log_;
 
-    State state_ = State::Provisioning;
+    State         state_             = State::Provisioning;
+    unsigned long lastConnectTryMs_  = 0;
+    unsigned long connectBackoffMs_  = 0;
+    uint8_t       connectAttempts_   = 0;
 };
 
 } // namespace glp::app

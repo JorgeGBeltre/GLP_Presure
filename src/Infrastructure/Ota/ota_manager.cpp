@@ -4,6 +4,7 @@
 
 #include "ota_manager.h"
 #include "Infrastructure/Config/nvs_config.h"
+#include "Infrastructure/System/EspSystemControl.h"
 
 // mqtt instance is defined in mqtt_client.cpp — declared extern here
 // (included via ota_manager.h -> mqtt_client.h chain)
@@ -33,16 +34,19 @@ void initOTA() {
 
     ota.onProgress([](int pct, const String& ver) {
         g_otaInProgress = true;
+        glp::infra::EspSystemControl::setWatchdogPaused(true);
         Serial.printf("[OTA] %s — %d%% complete\n", ver.c_str(), pct);
     });
 
     ota.onSuccess([](const String& ver) {
         g_otaInProgress = false;
+        glp::infra::EspSystemControl::markGracefulReboot();
         Serial.printf("[OTA] Firmware v%s installed. Restarting...\n", ver.c_str());
     });
 
     ota.onError([](const String& err, const String& ver) {
         g_otaInProgress = false;
+        glp::infra::EspSystemControl::setWatchdogPaused(false);
         Serial.printf("[OTA] ERROR updating to v%s: %s\n", ver.c_str(), err.c_str());
     });
 
